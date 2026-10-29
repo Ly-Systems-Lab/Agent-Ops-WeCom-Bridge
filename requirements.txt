@@ -1,0 +1,7 @@
+# 桥只有两个第三方依赖，其余全部是标准库（argparse/json/logging/os/queue/re/sqlite3/
+# subprocess/sys/tempfile/threading/time/uuid/datetime）。
+#
+# 实测版本（Windows 11 + Python 3.14.6，2026-10-28）：requests 2.34.2 / websocket-client 1.9.2
+# 装法见 docs/claude-code-wecom-guide.md 的「开始之前」一节。
+requests>=2.28
+websocket-client>=1.6
