@@ -145,8 +145,8 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 所以必须做成**显式切换的模式**，不能混进常态流程 —— 现在只是候选路线。
 
 **关于「物理世界」这一半**：端侧设备（C3 小电视）已经接在同一条设备总线上，
-它们**本身就是群成员、可以被 `@`**。接法与实测数据在另一个仓
-[`mqtt-edge-hub`](https://github.com/Ly-FirmwareLab/mqtt-edge-hub) 的教程里 ——
+它们**本身就是群成员、可以被 `@`**。接法与实测数据在另一个仓的
+[企微接入教程](https://github.com/Ly-FirmwareLab/mqtt-edge-hub/blob/main/ai-agent-wecom/README.md) 里 ——
 那是**架构思路**，不是另一份接入流程。接下来会单独发布一个 **MQTT 数据层底座**；
 两个仓合起来，才是完整的「**人 ⇄ Agent ⇄ 物理世界**」这条路。
 
