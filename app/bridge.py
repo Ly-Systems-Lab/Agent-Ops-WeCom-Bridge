@@ -144,6 +144,29 @@ def parse_list(s):
     return {x.strip() for x in (s or "").split(",") if x.strip()}
 
 
+def parse_labels(s):
+    """`userid=显示名` 列表（逗号分隔）→ dict。
+
+    **为什么要它**（2026-10-30 用户实测）：审批卡上的「处理」一行原来直接写
+    `from.userid`，而企微回调的 `from` **只有 `userid`、没有任何显示名**
+    （日志 `[shape] from keys=['userid']`）⇒ 把企微昵称改成 "CEO" 也改不掉卡片上
+    那个账号 ID，而群里**所有人都看得见**那张卡。映射只能由桥这侧维护。
+
+    按**第一个** `=` 切（显示名本身带 `=` 也不会被切坏）；格式不对的项静默跳过 ——
+    宁可少一个名字，也不要因为一个笔误起不来。
+    """
+    out = {}
+    for item in (s or "").split(","):
+        item = item.strip()
+        if "=" not in item:
+            continue
+        k, v = item.split("=", 1)
+        k, v = k.strip(), v.strip()
+        if k and v:
+            out[k] = v
+    return out
+
+
 def whitelist_gate(allowed, allow_anyone):
     """启动闸门：白名单为空就**拒绝启动**（fail-closed）。
 
@@ -1329,7 +1352,8 @@ class Bridge:
     def __init__(self, bot_id, secret, allow_users, allow_chats, bot_name,
                  store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
-                 approval_dir=None, approval_wait_sec=120, approval_allow=""):
+                 approval_dir=None, approval_wait_sec=120, approval_allow="",
+                 user_labels=""):
         self.bot_id = bot_id
         self.secret = secret
         self.allow_users = parse_list(allow_users)
@@ -1348,8 +1372,15 @@ class Bridge:
         self.approval_dir = approval_dir or ""
         self.approval_wait_sec = float(approval_wait_sec or 0)
         self.approval_allow = approval_allow or ""
+        # 卡片上给人看的名字（`WECOM_USER_LABELS`）：userid 是账号 ID，不是昵称。
+        self.user_labels = parse_labels(user_labels)
         self._approvals = {}       # id -> {chatid, chat_type, userid, ts, tool}
         self._approval_lock = threading.Lock()
+        # 「旁路消息」计数：本轮任务**除了流式气泡之外**又发出去的消息条数。
+        # 气泡的位置由**创建时间**锁定，后面只改内容 ⇒ 中途发过卡（审批/状态）时，
+        # 答案若写进气泡就会停在那几张卡**上方**。`_finish` 用它决定要不要另发一条。
+        self._side_msgs = 0
+        self._side_lock = threading.Lock()
         self.dump_raw = dump_raw
         self.stale_rx_sec = int(stale_rx_sec or 0)   # 0 = 关闭惰性连接检测（先量再开）
 
@@ -1413,7 +1444,11 @@ class Bridge:
         with self._receipt_cv:
             want = self._receipt_want
             if req_id and want and req_id != want:
-                log.info("[send] 忽略无关回执 req_id=%s（正在等 %s）", req_id[:8], want[:8])
+                # ⚠️ 只在**真的在等**的时候才记：`_receipt_want` 是上一帧留下的陈旧值，
+                # 空闲时每一拍心跳的回执都会撞上它 ⇒ 30 秒一条"正在等 xxx"的假象
+                # （2026-10-31 日志实测：连续 6 分钟刷同一行，看着像某个发送卡死了）。
+                if self._receipt_pending:
+                    log.info("[send] 忽略无关回执 req_id=%s（正在等 %s）", req_id[:8], want[:8])
                 return
             if self._receipt_pending and self._receipt is None:
                 self._receipt = (rc, emsg)
@@ -1441,6 +1476,7 @@ class Bridge:
         if not chatid:
             log.warning("[send] 无 chatid，跳过推送")
             return {"sent": False, "errcode": None, "errmsg": "no chatid"}
+        self._note_side()
         frame = {
             "cmd": "aibot_send_msg",
             "headers": {"req_id": self._new_req_id()},
@@ -1468,6 +1504,7 @@ class Bridge:
         if not chatid:
             log.warning("[send] 无 chatid，跳过卡片")
             return {"sent": False, "errcode": None, "errmsg": "no chatid"}
+        self._note_side()
         frame = {
             "cmd": "aibot_send_msg",
             "headers": {"req_id": self._new_req_id()},
@@ -1552,6 +1589,7 @@ class Bridge:
         if self._reply_q.full():
             log.warning("[reply] 回复队列已满，丢弃一条：%r", content[:20])
             return False
+        self._note_side()
         self._reply_q.put_nowait((response_url, content))
         return True
 
@@ -1715,9 +1753,49 @@ class Bridge:
                            f"❔ 第 1/{n} 段推送结果未知（可能已发出，也可能没有）。")
         return self._send_parts(chatid, chat_type, parts, first_idx=2)
 
-    def _finish(self, st, chatid, chat_type, text):
-        """收尾统一出口：有气泡就复用气泡，没有就走主动推送。"""
+    def _note_side(self):
+        """记一条"气泡之外的消息"（markdown / 卡片 / response_url 回执）。"""
+        with self._side_lock:
+            self._side_msgs += 1
+
+    def _side_count(self):
+        with self._side_lock:
+            return self._side_msgs
+
+    def _user_label(self, userid):
+        """卡片上给人看的名字。**没配映射一律脱敏**，绝不把账号 ID 摆到群里。
+
+        ⚠️ 企微回调的 `from` 只有 `userid`，没有昵称/别名（2026-10-30 实测，
+        改过群昵称也没用）⇒ 想显示 "CEO" 只能在这里配 `WECOM_USER_LABELS`。
+        """
+        uid = (userid or "").strip()
+        if not uid:
+            return "?"
+        mapped = self.user_labels.get(uid)
+        if mapped:
+            return mapped
+        return (uid[0] + "***") if len(uid) > 1 else "*"
+
+    def _finish(self, st, chatid, chat_type, text, since=None):
+        """收尾统一出口：有气泡就复用气泡，没有就走主动推送。
+
+        `since` = 本轮开始时的旁路消息计数（见 `_do_job`）。**中途发过任何别的消息**
+        （审批卡 / `/status` 卡 / `/stop` 回执 / 自愈提示）时，答案必须**另发一条**：
+        流式气泡的位置由**创建时间**锁定，后面每次更新只是改内容、位置不动
+        ⇒ 答案写回去就会停在那几张卡**上方**（2026-10-30 用户实测的体验问题）。
+
+        `since=None` = 调用方不关心顺序（早退路径、异常路径），保持老行为。
+        """
         if st is None:
+            return self.send_chunks(chatid, chat_type, text)
+        if since is not None and self._side_count() != since:
+            n = self._side_count() - since
+            log.info("[deliver] 本轮中途发过 %d 条旁路消息 ⇒ 气泡收口，答案另发一条", n)
+            r = st.send("✅ 已完成，回答见下 ↓", finish=True)
+            if not r.get("sent"):
+                # 收口失败也**照发**答案：气泡可能还停在"处理中"，但答案绝不能丢
+                log.warning("[deliver] 收口气泡没成功（%s）⇒ 答案照发",
+                            r.get("errmsg") or r.get("errcode"))
             return self.send_chunks(chatid, chat_type, text)
         return self._deliver(st, chatid, chat_type, text)
 
@@ -2005,7 +2083,7 @@ class Bridge:
         （2026-10-29，见 DECISIONS §21.9）。"""
         return {
             "card_type": "button_interaction",
-            "source": {"desc": "WeCom-Agent-Bridge"},
+            "source": {"desc": "Agent-Ops-WeCom-Bridge"},
             # 标题用**群里的机器人名**（`WECOM_BOT_NAME`），不硬编码项目名 ——
             # 卡片上写一个群里不存在的名字比不写更糟。
             "main_title": {"title": f"{self.bot_name} · 状态",
@@ -2147,7 +2225,7 @@ class Bridge:
         rid = req.get("id") or ""
         return {
             "card_type": "button_interaction",
-            "source": {"desc": "WeCom-Agent-Bridge"},
+            "source": {"desc": "Agent-Ops-WeCom-Bridge"},
             "main_title": {"title": "需要你确认",
                            "desc": f"{tool_desc(tool, req.get('tool_input'))}"},
             "horizontal_content_list": [
@@ -2170,13 +2248,15 @@ class Bridge:
         tool = req.get("tool_name") or "?"
         return {
             "card_type": kind,
-            "source": {"desc": "WeCom-Agent-Bridge"},
+            "source": {"desc": "Agent-Ops-WeCom-Bridge"},
             "main_title": {"title": "已允许" if allow else "已拒绝",
                            "desc": tool_desc(tool, req.get("tool_input"))},
             "horizontal_content_list": [
                 {"keyname": "工具", "value": tool},
                 {"keyname": "内容", "value": self._approval_detail(tool, req.get("tool_input"))},
-                {"keyname": "处理", "value": (userid or "?") + " · " +
+                # ⚠️ 这里**不能**直接写 `userid`：那是账号 ID（形如 "zhangsan"），
+                # 群里所有人都看得见这张卡，而改企微昵称不会改变它。
+                {"keyname": "处理", "value": self._user_label(userid) + " · " +
                                              time.strftime("%H:%M:%S")},
             ],
             "sub_title_text": ("这次调用已经执行。" if allow else "这次调用没有执行。"),
@@ -2184,7 +2264,7 @@ class Bridge:
             "card_action": {"type": 1, "url": "https://work.weixin.qq.com"},
         } if kind == "text_notice" else {
             "card_type": "button_interaction",
-            "source": {"desc": "WeCom-Agent-Bridge"},
+            "source": {"desc": "Agent-Ops-WeCom-Bridge"},
             "main_title": {"title": "已允许" if allow else "已拒绝",
                            "desc": tool_desc(tool, req.get("tool_input"))},
             "horizontal_content_list": [
@@ -2322,6 +2402,9 @@ class Bridge:
     def _do_job(self, job):
         chatid, chat_type, userid, text = (job["chatid"], job["chat_type"],
                                            job["userid"], job["text"])
+        # 本轮开始时的旁路消息计数：跑到一半若发过审批卡/状态卡，答案要另发一条
+        # 才能落在最底部（见 `_finish`）。
+        job["_side0"] = self._side_count()
 
         # 这一条**流式气泡**装下 ack 与正文（同一个 stream.id，正文覆盖 ack）。
         # 回调没带 req_id 时退回老路径（response_url 回执 + 主动推送），别把消息吞掉。
@@ -2448,7 +2531,8 @@ class Bridge:
     def _report(self, job, res, cwd, session_id, note="", st=None):
         chatid, chat_type = job["chatid"], job["chat_type"]
         if res.get("fatal"):
-            self._finish(st, chatid, chat_type, "❌ " + res["text"])
+            self._finish(st, chatid, chat_type, "❌ " + res["text"],
+                         since=job.get("_side0"))
             return
 
         if res["timed_out"]:
@@ -2472,7 +2556,7 @@ class Bridge:
             msg += res["usage_footer"]
         msg = note + msg
 
-        self._finish(st, chatid, chat_type, msg)
+        self._finish(st, chatid, chat_type, msg, since=job.get("_side0"))
 
         # 会话落库：拿到就存（失败那次也会带 session_id，存下来无妨，但别据此认为成功）
         if res.get("session_id"):
@@ -2624,7 +2708,7 @@ def demo_card(kind):
         # 必填：main_title / button_list / task_id（task_id 同一机器人不许重复）
         return {
             "card_type": "button_interaction",
-            "source": {"desc": "WeCom-Agent-Bridge 探针"},
+            "source": {"desc": "Agent-Ops-WeCom-Bridge 探针"},
             "main_title": {"title": "按钮卡片测试", "desc": "点任意一个，看回调里回来什么"},
             "sub_title_text": "这张卡片只用来验证长连接模式能否下发可点击卡片。",
             "button_list": [
@@ -2638,7 +2722,7 @@ def demo_card(kind):
     # text_notice：main_title / sub_title_text 至少一项
     return {
         "card_type": "text_notice",
-        "source": {"desc": "WeCom-Agent-Bridge 探针"},
+        "source": {"desc": "Agent-Ops-WeCom-Bridge 探针"},
         "main_title": {"title": "文本卡片测试", "desc": "长连接模式 · 无回调要求"},
         "sub_title_text": f"如果你看到这张卡片，说明长连接机器人能发 template_card（{ts}）。",
         "horizontal_content_list": [
@@ -2773,7 +2857,8 @@ def main():
                                             PROGRESS_HEARTBEAT_SEC),
                     approval_dir=approval_dir,
                     approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
-                    approval_allow=cfg("CC_APPROVAL_ALLOW"))
+                    approval_allow=cfg("CC_APPROVAL_ALLOW"),
+                    user_labels=cfg("WECOM_USER_LABELS"))
 
     if cfg_bool("CC_KEEP_AWAKE", True):
         start_keep_awake()

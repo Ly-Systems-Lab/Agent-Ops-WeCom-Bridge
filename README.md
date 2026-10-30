@@ -1,10 +1,17 @@
-# Agent-Ops-Console: WeCom-Agent-Bridge
+# Agent-Ops-WeCom-Bridge
 
 **为企业微信打造的重算力 Agent 控制台与运维网关**
 
-> 本项目作为 [`Agent-Ops-Console`](https://github.com/Ly-FirmwareLab/Agent-Ops-Console) 架构的
-> **首发网关（Gateway）**，专为 Claude Code 等重算力 Agent 提供基于企业微信的沉浸式控制能力
-> （流式进度、打断、权限拦截），并原生打通 MQTT 实现物理世界交互。
+> 企业微信就是你的调度台：Claude Code 等重算力 Agent 在这里被指挥、被看见、被拦下
+> （流式进度、打断、权限拦截），原生打通 MQTT 还能直接触达物理世界。
+>
+> 它是 **Agent Ops 三件套里的「控制面」**：
+>
+> | 仓 | 角色 | 状态 |
+> |---|---|---|
+> | **本仓** · `Agent-Ops-WeCom-Bridge` | 控制面 · 人 ⇄ Agent | 已公开 |
+> | `Agent-Ops-Edge-Hub` | 数据面 · Agent ⇄ 物理世界（MQTT / 端侧设备） | 即将发布 |
+> | `Agent-Ops-Architecture` | 总蓝图 · 《协同宣言》与全景架构（只有文档，不含代码） | 暂未公开 |
 
 ## 🌌 The Manifesto | 我们的协同宣言
 

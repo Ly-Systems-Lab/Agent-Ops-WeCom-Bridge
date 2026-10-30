@@ -1574,6 +1574,83 @@ def test_review_fixes():
     check("留空 ⇒ 回落 project,local（不含 user）", got == "project,local", repr(got))
 
 
+def test_ordering_and_labels():
+    """2026-10-30 用户实测的两处：卡片暴露账号 ID / 答案被卡片顶到上面。"""
+    print("\n== 卡片人名映射 + 回答落在最底部 ==")
+
+    # ① 映射解析
+    m = bridge.parse_labels("zhangsan=CEO, lisi=李四 ,bad,=x, y = =z")
+    check("映射按第一个 = 切", m.get("zhangsan") == "CEO", repr(m))
+    check("映射去两端空格", m.get("lisi") == "李四", repr(m))
+    check("无 = 的坏项跳过", "bad" not in m, repr(m))
+    check("空 key 跳过", "" not in m, repr(m))
+    check("值本身带 = 不被切坏", bridge.parse_labels("a==b").get("a") == "=b")
+
+    class R0:
+        perm_mode = "dontAsk"
+        timeout = 60
+
+    tmp = tempfile.mkdtemp(prefix="ccbridge-order-")
+    store = bridge.Store(os.path.join(tmp, "o.db"))
+    b = bridge.Bridge(BOT_ID, "sec", "zhangsan", "", "CC BOT", store, R0(), tmp,
+                      18000, 20, 0, user_labels="zhangsan=CEO")
+
+    # ② 卡片上写什么
+    req = {"id": "r1", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+    card = b._approval_resolved_card(req, True, "zhangsan", "text_notice")
+    vals = {kv["keyname"]: kv["value"] for kv in card["horizontal_content_list"]}
+    check("配了映射 ⇒ 卡片显示 CEO", vals.get("处理", "").startswith("CEO ·"),
+          vals.get("处理"))
+    check("卡片里不出现账号 ID", "zhangsan" not in json.dumps(card, ensure_ascii=False))
+    card2 = b._approval_resolved_card(req, True, "wangwu", "text_notice")
+    vals2 = {kv["keyname"]: kv["value"] for kv in card2["horizontal_content_list"]}
+    check("没配映射 ⇒ 脱敏 w***", vals2["处理"].startswith("w***"), vals2["处理"])
+    check("单字符 userid 也不露原值", b._user_label("z") == "*")
+
+    # ③ 回答位置：中途没发过别的消息 ⇒ 仍复用气泡（老行为不变）
+    calls = []
+
+    class FakeStream:
+        def __init__(self):
+            self.sent = []
+
+        def send(self, content, finish):
+            self.sent.append((content, finish))
+            return {"sent": True, "errcode": 0, "errmsg": ""}
+
+    b._deliver = lambda st, cid, ct, text: calls.append(("bubble", text))
+    b.send_chunks = lambda cid, ct, text: calls.append(("push", text))
+    st = FakeStream()
+    side0 = b._side_count()
+    b._finish(st, "c1", 2, "答案", since=side0)
+    check("没旁路消息 ⇒ 仍写进气泡", calls == [("bubble", "答案")], repr(calls))
+
+    # ④ 中途发过卡（审批/状态）⇒ 气泡收口 + 答案另发一条 = 落在最底部
+    calls.clear()
+    b._note_side()
+    b._finish(st, "c1", 2, "答案", since=side0)
+    check("发过卡 ⇒ 答案另发一条", calls == [("push", "答案")], repr(calls))
+    check("气泡被收口成提示", bool(st.sent) and st.sent[-1][1] is True
+          and "回答见下" in st.sent[-1][0], repr(st.sent[-1:]))
+
+    # ⑤ 收口失败也必须把答案发出去（宁可有提示没内容，不能丢答案）
+    calls.clear()
+
+    class DeadStream(FakeStream):
+        def send(self, content, finish):
+            self.sent.append((content, finish))
+            return {"sent": False, "errcode": 40058, "errmsg": "nope"}
+
+    b._note_side()
+    b._finish(DeadStream(), "c1", 2, "答案", since=side0)
+    check("气泡收口失败 ⇒ 答案照发", calls == [("push", "答案")], repr(calls))
+
+    # ⑥ 没有气泡（回调没带 req_id）⇒ 直接推送，不受影响
+    calls.clear()
+    b._finish(None, "c1", 2, "答案", since=side0)
+    check("无气泡 ⇒ 直接推送", calls == [("push", "答案")], repr(calls))
+
+
 def main():
     skip_llm = "--skip-llm" in sys.argv
     test_chunk()
@@ -1593,6 +1670,7 @@ def main():
     test_progress_pump()
     test_approval()
     test_review_fixes()
+    test_ordering_and_labels()
     if skip_llm:
         print("\n（跳过 runner 真跑）")
     else:

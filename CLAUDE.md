@@ -1,4 +1,4 @@
-# WeCom-Agent-Bridge · 工作区说明
+# Agent-Ops-WeCom-Bridge · 工作区说明
 
 企业微信 ⇄ 本机 Claude Code 的桥。**这里是桥自己的 cwd** —— 它决定了本目录下的会话
 加载哪份 `CLAUDE.md` 和哪份项目 memory。

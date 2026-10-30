@@ -1,6 +1,6 @@
 # 把 Claude Code 接入企业微信（实战指南）
 
-> `WeCom-Agent-Bridge` · `Agent-Ops-Console` 首发网关的接入实战。
+> `Agent-Ops-WeCom-Bridge` · 企业微信 ⇄ 本机 Claude Code 的接入实战。
 >
 > 本文给的是**原理 + 实测数据 + 最小示例**，不绑定某一版实现。
 > 文里标注「实测」的结论都在 Windows + Claude Code 2.1.x + 企业微信「智能机器人·长连接」上跑过，
@@ -80,8 +80,8 @@ Claude Code 是**终端里的 agent**，没有「聊天渠道」这个概念 —
 ### ① 装依赖
 
 ```bash
-git clone <this-repo> WeCom-Agent-Bridge
-cd WeCom-Agent-Bridge
+git clone <this-repo> Agent-Ops-WeCom-Bridge
+cd Agent-Ops-WeCom-Bridge
 
 python -m venv .venv
 .venv\Scripts\activate              # macOS/Linux：source .venv/bin/activate
