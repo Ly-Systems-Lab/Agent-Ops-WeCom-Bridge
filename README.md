@@ -2,6 +2,8 @@
 
 **为企业微信打造的重算力 Agent 控制台与运维网关**
 
+> 🔗 **三件套** · [🧠 控制面（本仓）](https://github.com/Ly-Systems-Lab/Agent-Ops-WeCom-Bridge) · [🔌 数据面 · Edge-Hub](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub) · [🔭 总蓝图 · Architecture](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture)
+>
 > 企业微信就是你的调度台：Claude Code 等重算力 Agent 在这里被指挥、被看见、被拦下
 > （流式进度、打断、权限拦截），原生打通 MQTT 还能直接触达物理世界。
 >
@@ -9,9 +11,9 @@
 >
 > | 仓 | 角色 | 状态 |
 > |---|---|---|
-> | **本仓** · `Agent-Ops-WeCom-Bridge` | 控制面 · 人 ⇄ Agent | 已公开 |
-> | `Agent-Ops-Edge-Hub` | 数据面 · Agent ⇄ 物理世界（MQTT / 端侧设备） | 即将发布 |
-> | `Agent-Ops-Architecture` | 总蓝图 · 《协同宣言》与全景架构（只有文档，不含代码） | 暂未公开 |
+> | **本仓** · [`Agent-Ops-WeCom-Bridge`](https://github.com/Ly-Systems-Lab/Agent-Ops-WeCom-Bridge) | 控制面 · 人 ⇄ Agent | 已公开 |
+> | [`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub) | 数据面 · Agent ⇄ 物理世界（MQTT / 端侧设备） | 已公开 |
+> | [`Agent-Ops-Architecture`](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture) | 总蓝图 · 《协同宣言》与全景架构（只有文档，不含代码） | 已公开 |
 
 ## 🌌 The Manifesto | 我们的协同宣言
 
@@ -145,16 +147,16 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | **审批卡片** | `Bash`/`Write`/`Edit` 先发「允许 / 拒绝」，点了才执行；只读直放。**仅全自动档位下有效** |
 | 常驻 | 登录自启、单实例、看门狗自愈、日志保留 14 天、运行期间不睡眠 |
 | 企业能力 | 邮件 / 文档 / 表格 / 日程 / 会议 / 待办 / 微盘 / 通讯录 / 读 7 天群历史 —— **由官方 `wecom-cli` 提供**，本仓零代码接入 |
-| 设备总线 | MQTT / HTTP 控端侧设备 —— **在另一个仓**（`mqtt-edge-hub`），不在本仓库 |
+| 设备总线 | MQTT / HTTP 控端侧设备 —— **在数据面那个仓**（[`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub)），不在本仓库 |
 | 多 Agent 同群 | 多个机器人同处一群、`@` 谁谁干活、互不串台 —— **形态成立**（已在同一群里用过） |
 
 **还没做的**：由一台主力设备 **SSH 到其它设备**汇总产物 / 直接派活。这条会跳过"人当中介"那道闸，
 所以必须做成**显式切换的模式**，不能混进常态流程 —— 现在只是候选路线。
 
-**关于「物理世界」这一半**：端侧设备（C3 小电视）已经接在同一条设备总线上，
-它们**本身就是群成员、可以被 `@`**。接法与实测数据在另一个仓的
-[企微接入教程](https://github.com/Ly-FirmwareLab/mqtt-edge-hub/blob/main/ai-agent-wecom/README.md) 里 ——
-那是**架构思路**，不是另一份接入流程。接下来会单独发布一个 **MQTT 数据层底座**；
+**关于「物理世界」这一半**：端侧设备（C3 小电视、P4 触控面板、具身小车）已经接在同一条设备总线上，
+它们**本身就是群成员、可以被 `@`**。接法与实测数据在数据面那个仓的
+[企微接入教程](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub/blob/main/ai-agent-wecom/README.md) 里 ——
+那是**架构思路**，不是另一份接入流程。**MQTT 数据层底座已经公开**（[`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub)）；
 两个仓合起来，才是完整的「**人 ⇄ Agent ⇄ 物理世界**」这条路。
 
 ## 和官方是什么关系：站在官方肩膀上
