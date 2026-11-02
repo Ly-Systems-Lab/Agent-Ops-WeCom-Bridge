@@ -21,6 +21,8 @@
 
 包含任务卡片（允许 / 拒绝 / 实时进度 / 上下文余量）与 `/stop` 即刻停止的完整演示。
 
+🖼️ **[实拍图集 →](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture/blob/main/docs/showcase/README.md)** · 手机端下指令、Windows 本地干活、Agent 自动修 Bug
+
 ## 🌌 The Manifesto | 我们的协同宣言
 
 **在这个模型狂飙的时代，我们拒绝“许愿式”的 AI 幻想。**
