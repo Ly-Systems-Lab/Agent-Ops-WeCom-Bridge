@@ -15,6 +15,12 @@
 > | [`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub) | 数据面 · Agent ⇄ 物理世界（MQTT / 端侧设备） | 已公开 |
 > | [`Agent-Ops-Architecture`](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture) | 总蓝图 · 《协同宣言》与全景架构（只有文档，不含代码） | 已公开 |
 
+## 🎬 演示
+
+**[▶ 手机上发指令，结果落在 Windows 本地](https://www.bilibili.com/video/BV1nY4w6kEiy)**
+
+包含任务卡片（允许 / 拒绝 / 实时进度 / 上下文余量）与 `/stop` 即刻停止的完整演示。
+
 ## 🌌 The Manifesto | 我们的协同宣言
 
 **在这个模型狂飙的时代，我们拒绝“许愿式”的 AI 幻想。**
@@ -158,6 +164,9 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 [企微接入教程](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub/blob/main/ai-agent-wecom/README.md) 里 ——
 那是**架构思路**，不是另一份接入流程。**MQTT 数据层底座已经公开**（[`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub)）；
 两个仓合起来，才是完整的「**人 ⇄ Agent ⇄ 物理世界**」这条路。
+
+> 🎬 **[看实拍：一句话驱动三台端侧设备（36 秒）](https://www.bilibili.com/video/BV18Zx86KEDT/)** ——
+> C3 小电视 → P4 触控面板 → 具身智能小车，由 Agent 依次执行。
 
 ## 和官方是什么关系：站在官方肩膀上
 
