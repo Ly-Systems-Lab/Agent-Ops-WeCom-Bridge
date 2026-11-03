@@ -213,13 +213,18 @@ def test_stream_parse():
     init = ev(type="system", subtype="init", session_id="sess-init", model="m",
               permissionMode="dontAsk", tools=["Read"])
     noisy = [ev(type="system", subtype="thinking_tokens", estimated_tokens=1)] * 3
-    tool1 = ev(type="assistant", message={"content": [
-        {"type": "tool_use", "name": "Read", "input": {"file_path": r"C:\p\a.py"}}]})
-    text_only = ev(type="assistant", message={"content": [
-        {"type": "text", "text": "我先看看"}]})
-    tool2 = ev(type="assistant", message={"content": [
-        {"type": "tool_use", "name": "Bash",
-         "input": {"command": "ls", "description": "列目录"}}]})
+    tool1 = ev(type="assistant", message={
+        "model": "m", "usage": {"input_tokens": 40, "output_tokens": 5},
+        "content": [
+            {"type": "tool_use", "name": "Read", "input": {"file_path": r"C:\p\a.py"}}]})
+    text_only = ev(type="assistant", message={
+        "model": "m", "usage": {"input_tokens": 45, "output_tokens": 5},
+        "content": [{"type": "text", "text": "我先看看"}]})
+    tool2 = ev(type="assistant", message={
+        "model": "m", "usage": {"input_tokens": 50, "output_tokens": 5},
+        "content": [
+            {"type": "tool_use", "name": "Bash",
+             "input": {"command": "ls", "description": "列目录"}}]})
     bad = "{not json"
     result = ev(type="result", subtype="success", is_error=False, result="答案",
                 session_id="sess-final", permission_denials=[],
@@ -227,7 +232,8 @@ def test_stream_parse():
                                   "cacheCreationInputTokens": 0, "contextWindow": 1000}})
 
     acc = {"result": None, "init": None, "events": 0, "last": None, "tools": 0,
-           "bad": 0, "raw": [], "raw_bytes": 0, "raw_dropped": 0, "stderr": ""}
+           "bad": 0, "raw": [], "raw_bytes": 0, "raw_dropped": 0, "stderr": "",
+           "last_usage": None, "last_model": None}
     seen = []
     p = FakeProc([init] + noisy + [tool1, text_only, tool2, bad, result])
     r._read_stdout(p, acc, lambda d, n: seen.append((d, n)))
@@ -240,6 +246,9 @@ def test_stream_parse():
     check("on_progress 收到两条（含工具名 + 目标）",
           seen == [("读 p/a.py", 1), ("运行 列目录", 2)], repr(seen))
     check("最后一条事件类型被记下来（排障用）", acc["last"] == "result", acc["last"])
+    check("保留最后一次 assistant 的 usage（上下文占用用它算）",
+          (acc["last_usage"] or {}).get("input_tokens") == 50
+          and acc["last_model"] == "m", repr(acc["last_usage"]))
 
     # on_progress 抛错必须被吞掉 —— 进度是锦上添花，不能拖垮这一轮
     def boom(d, n):
@@ -290,9 +299,10 @@ def test_runner_stream():
     # ① 正常：init → 两次工具 → result
     script = mk + (
         "ev(type='system', subtype='init', session_id='S1', model='m', permissionMode='x', tools=[])\n"
-        "ev(type='assistant', message={'content':[{'type':'tool_use','name':'Read',"
-        "'input':{'file_path':r'C:\\p\\a.py'}}]})\n"
-        "ev(type='assistant', message={'content':[{'type':'tool_use','name':'Bash',"
+        "ev(type='assistant', message={'model':'m','usage':{'input_tokens':20,'output_tokens':5},"
+        "'content':[{'type':'tool_use','name':'Read','input':{'file_path':r'C:\\p\\a.py'}}]})\n"
+        "ev(type='assistant', message={'model':'m','usage':{'input_tokens':30,'output_tokens':5},"
+        "'content':[{'type':'tool_use','name':'Bash',"
         "'input':{'command':'ls','description':'列目录'}}]})\n"
         "ev(type='result', subtype='success', is_error=False, result='好的', session_id='S1',"
         " permission_denials=[], modelUsage={'m':{'inputTokens':5,'cacheReadInputTokens':5,"
@@ -1390,9 +1400,12 @@ def test_card_events():
     check("非白名单点卡片不生效", store.get_session("cid", "u1", tmp)[0] == "SID123")
 
     # 清上下文
+    b._last_usage[("cid", "u1")] = "📊 上下文 783.8% (7.8M/1.0M)"
     b._handle_card_event(ev("status_clear"))
     check("点「清上下文」把 session 清掉",
           store.get_session("cid", "u1", tmp)[0] is None)
+    check("清上下文时旧 usage 读数一起清掉",
+          ("cid", "u1") not in b._last_usage, repr(b._last_usage))
 
     # 停止
     before = FakeRunner.killed
@@ -1651,6 +1664,89 @@ def test_ordering_and_labels():
     check("无气泡 ⇒ 直接推送", calls == [("push", "答案")], repr(calls))
 
 
+def test_usage_footer():
+    """上下文占用：用最后一次调用的 usage，不是 modelUsage 的累计值。"""
+    print("\n== 上下文占用（累计值 vs 最后一次调用）==")
+    data = {"modelUsage": {"m[1m]": {
+        "inputTokens": 7_800_000, "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0, "contextWindow": 1_000_000}}}
+    last = {"input_tokens": 200_000, "cache_read_input_tokens": 50_000,
+            "cache_creation_input_tokens": 0, "output_tokens": 1_000}
+    f = bridge.usage_footer(data, last, "m")
+    check("分母仍取 contextWindow", "/1.0M" in f, f.strip())
+    check("分子取最后一次调用（25.1%），不是累计的 7.8M",
+          "25.1%" in f and "7.8M" not in f, f.strip())
+    check("模型名带 [1m] 后缀也能匹配", "25.1%" in f, f.strip())
+    check("没有 assistant usage ⇒ 不显示假读数",
+          bridge.usage_footer(data) == "", repr(bridge.usage_footer(data)))
+    check("多模型时取窗口最大的那个",
+          "25.1%" in bridge.usage_footer(
+              {"modelUsage": {"small": {"contextWindow": 200_000},
+                              "big": {"contextWindow": 1_000_000}}}, last, "unknown"),
+          bridge.usage_footer(
+              {"modelUsage": {"small": {"contextWindow": 200_000},
+                              "big": {"contextWindow": 1_000_000}}}, last, "unknown"))
+
+
+def test_cwd_and_approval():
+    """群聊/私聊工作区路由 + 私聊审批默认值（都不调模型）。"""
+    print("\n== 工作区路由 + 私聊审批开关 ==")
+    tmp = tempfile.mkdtemp(prefix="ccbridge-cwd-")
+    group = os.path.join(tmp, "group")
+    dm = os.path.join(tmp, "dm")
+    os.makedirs(group)
+    os.makedirs(dm)
+    store = bridge.Store(os.path.join(tmp, "cwd.db"))
+
+    class FakeRunner:
+        perm_mode = "bypassPermissions"
+        timeout = 60
+
+    def mk(approval_dm=True, approval_dir=None):
+        return bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store,
+                             FakeRunner(), group, 18000, 20, 0,
+                             approval_dir=approval_dir,
+                             cc_cwd_dm=dm, approval_dm=approval_dm)
+
+    b = mk()
+    check("单聊走 CC_CWD_DM", b._cwd_for(1) == dm)
+    check("群聊走 CC_CWD", b._cwd_for(2) == group)
+    check("字符串 1 也按单聊处理", b._cwd_for("1") == dm)
+    check("非法/缺失 chat_type 回落群聊",
+          b._cwd_for(None) == group and b._cwd_for("x") == group)
+    check("私聊审批默认开", b.approval_dm is True)
+
+    # /status 的默认工作区必须按会话类型取（还没跑过第一轮时也一样）
+    check("私聊 /status 默认显示私聊目录",
+          dict(b._status_pairs("u1", 1, "u1"))["工作区"] == dm)
+    check("群聊 /status 默认显示群聊目录",
+          dict(b._status_pairs("g1", 2, "u1"))["工作区"] == group)
+
+    # 审批 env：私聊默认注入；显式设 0 才不注入
+    b_on = mk(approval_dm=True, approval_dir=tmp)
+    check("私聊默认注入审批 env",
+          (b_on._approval_env("u1", 1, "u1") or {}).get("CC_APPROVAL_DIR") == tmp)
+    check("群聊注入审批 env",
+          (b_on._approval_env("g1", 2, "u1") or {}).get("CC_APPROVAL_DIR") == tmp)
+    b_off = mk(approval_dm=False, approval_dir=tmp)
+    check("私聊显式全自动 ⇒ 不注入", b_off._approval_env("u1", 1, "u1") is None)
+    check("私聊全自动不影响群聊",
+          (b_off._approval_env("g1", 2, "u1") or {}).get("CC_APPROVAL_DIR") == tmp)
+    b_no = mk(approval_dm=True, approval_dir="")
+    check("审批整体没开 ⇒ 谁都不注入", b_no._approval_env("u1", 1, "u1") is None)
+
+    # 路由变化：换目录并清旧 session；同路由则保留
+    store.save_session("u1", "u1", "sid-old", group)
+    sid, cwd = b._session_for("u1", 1, "u1")
+    check("私聊路由变化 ⇒ 清 session + 换目录", sid is None and cwd == dm)
+    check("库里记的是新目录",
+          store.get_session("u1", "u1", group) == (None, dm))
+    store.save_session("g1", "u1", "sid-group", group)
+    sid, cwd = b._session_for("g1", 2, "u1")
+    check("群聊路由没变 ⇒ 保留 session",
+          sid == "sid-group" and cwd == group)
+
+
 def main():
     skip_llm = "--skip-llm" in sys.argv
     test_chunk()
@@ -1671,6 +1767,8 @@ def main():
     test_approval()
     test_review_fixes()
     test_ordering_and_labels()
+    test_usage_footer()
+    test_cwd_and_approval()
     if skip_llm:
         print("\n（跳过 runner 真跑）")
     else:

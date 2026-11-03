@@ -30,6 +30,10 @@ import uuid
 # ⚠️ 必须钉 UTF-8：本机控制台是 GBK，不钉的话中文拒绝理由会以**乱码**交给模型
 #    （实测踩过；与 P4 那边"抓串口脚本必须钉 UTF-8"是同一课）
 try:
+    # stdin must also be pinned to UTF-8: on Windows the pipe defaults to GBK,
+    # so non-ASCII tool input decodes into lone surrogates and writing req.json
+    # then fails ("surrogates not allowed"), which denies the call.
+    sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 except Exception:

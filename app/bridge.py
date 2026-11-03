@@ -5,7 +5,13 @@
 + 控制指令 + 常驻化（单实例 / 自启 / 看门狗 / 日志保留 / 阻止睡眠）。
 
 群聊与**私聊**两条路径都支持：私聊回调里没有 `chatid`（用 `from.userid` 兜底），
-因此私聊天然是独立会话，但与群聊共用同一个 `cwd`。
+因此私聊天然是独立会话。两者的 `cwd` **可以分开**：群聊走 `CC_CWD`，私聊走
+`CC_CWD_DM`（不设就跟群聊同一个目录），见 `Bridge._cwd_for()`。
+
+群聊与私聊**默认都挂审批卡片**（`CC_APPROVAL_DM` 默认 1）：只要审批整体开着
+（`CC_APPROVAL=1`），两边都会注入审批 env、按同一套流程弹卡。
+私聊全自动是**显式可选项**：设 `CC_APPROVAL_DM=0`，此时私聊不注入审批 env；
+本项目提供的 hook 在无 env 时立刻放行（换用别的 hook 时，行为由那个 hook 决定）。
 
 复用自 Pi Hub 的 app/wecom_bot.py（真机跑通），删掉了 MQTT / devctl / 指令词表 / 告警格式化。
 刻意保留的行为（都有踩坑记录，别"顺手简化"）：
@@ -564,17 +570,42 @@ def chunk_md(text, limit_bytes=18000, reserve=24):
     return chunks or [""]
 
 
-def usage_footer(data):
-    """上下文占用。分母直接用 modelUsage 里的 contextWindow（实测存在），不猜。"""
+def usage_footer(data, last_usage=None, last_model=None):
+    """上下文占用。
+
+    ⚠️ **分子必须取"本轮最后一次 assistant 调用"的 usage，不能取 modelUsage 的
+    累计值。** `modelUsage` 是一次 `claude -p` 里**所有 API 调用**的合计 ——
+    只要这轮用过工具，同一段上下文就会被反复重发，累计值随调用次数线性膨胀。
+    实测一个 4~5 次调用的普通任务：`modelUsage` 合计 93.7k，而最后一次调用的
+    prompt 只有 45k（窗口 1M）⇒ 用累计值会报 9.4%，真实占用只有 4.5%。
+    工具调用再多几轮，累计值就会超过窗口本身，出现 783.8% 这种假读数。
+
+    分母仍取 `modelUsage[<model>].contextWindow`（实测存在，不猜）。
+    """
     mu = data.get("modelUsage") or {}
     if not mu:
         return ""
-    info = next(iter(mu.values()))
+    info = None
+    if last_model:
+        info = mu.get(last_model)
+        if info is None:
+            # 模型名可能带后缀（例如 `[1m]`），按前缀双向匹配一次
+            for name, v in mu.items():
+                if name.startswith(last_model) or last_model.startswith(name):
+                    info = v
+                    break
+    if info is None:
+        # 多模型（主模型 + 子任务模型）时取窗口最大的那个，比 next(iter()) 稳
+        info = max(mu.values(), key=lambda x: x.get("contextWindow") or 0)
     win = info.get("contextWindow") or 0
-    if not win:
+    if not win or not last_usage:
+        # 没拿到逐条 assistant usage 时**宁可不显示**，也不拿累计值冒充上下文
         return ""
-    used = (info.get("inputTokens", 0) + info.get("cacheReadInputTokens", 0)
-            + info.get("cacheCreationInputTokens", 0))
+    used = sum(int(last_usage.get(k) or 0) for k in (
+        "input_tokens", "cache_read_input_tokens",
+        "cache_creation_input_tokens", "output_tokens"))
+    if used <= 0:
+        return ""
     pct = used * 100.0 / win
 
     def k(n):
@@ -848,7 +879,7 @@ class Runner:
 
         acc = {"result": None, "init": None, "events": 0, "last": None,
                "tools": 0, "bad": 0, "raw": [], "raw_bytes": 0, "raw_dropped": 0,
-               "stderr": ""}
+               "stderr": "", "last_usage": None, "last_model": None}
         t_out = threading.Thread(target=self._read_stdout, args=(p, acc, on_progress),
                                  daemon=True, name="run-stdout")
         t_err = threading.Thread(target=self._read_stderr, args=(p, acc),
@@ -905,7 +936,10 @@ class Runner:
             "is_error": data.get("is_error"),
             "subtype": data.get("subtype"),
             "denials": data.get("permission_denials") or [],
-            "usage_footer": usage_footer(data) if self.show_usage else "",
+            # ⚠️ 上下文占用取**逐条 assistant 的 usage**（最后一次调用的 prompt 大小），
+            #    不能取 result.modelUsage 的累计值 —— 详见 usage_footer() 的说明。
+            "usage_footer": (usage_footer(data, acc["last_usage"], acc["last_model"])
+                             if self.show_usage else ""),
             "timed_out": timed_out,
             "stopped": stopped and not timed_out,
             "rc": p.returncode,
@@ -969,7 +1003,16 @@ class Runner:
                     if d.get("subtype") == "init":
                         acc["init"] = d
                 elif t == "assistant":
-                    for c in (d.get("message") or {}).get("content") or []:
+                    msg = d.get("message") or {}
+                    u = msg.get("usage") or {}
+                    # 只留"最后一次有 token 的 assistant 调用"：它是本轮结束时的
+                    # 真实上下文大小。result.modelUsage 是整轮累计，会随工具轮次膨胀。
+                    if u and any(u.get(x) for x in (
+                            "input_tokens", "cache_read_input_tokens",
+                            "cache_creation_input_tokens", "output_tokens")):
+                        acc["last_usage"] = u
+                        acc["last_model"] = msg.get("model")
+                    for c in msg.get("content") or []:
                         if c.get("type") != "tool_use":
                             continue
                         acc["tools"] += 1
@@ -1353,7 +1396,7 @@ class Bridge:
                  store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
-                 user_labels=""):
+                 user_labels="", cc_cwd_dm="", approval_dm=True):
         self.bot_id = bot_id
         self.secret = secret
         self.allow_users = parse_list(allow_users)
@@ -1362,6 +1405,11 @@ class Bridge:
         self.store = store
         self.runner = runner
         self.cc_cwd = cc_cwd
+        # 私聊专用目录（`CC_CWD_DM`）。留空 = 和群聊共用 `CC_CWD`。
+        self.cc_cwd_dm = cc_cwd_dm or cc_cwd
+        # 私聊是否也走审批卡片（`CC_APPROVAL_DM`）。默认开 ⇒ 群聊+私聊都挂卡；
+        # 设 0 才是“私聊全自动”的显式选择。
+        self.approval_dm = bool(approval_dm)
         self.chunk_bytes = chunk_bytes
         self.progress_sec = progress_sec
         # 真进度：有气泡时由 ProgressPump 按"变化时推 + 这个间隔兜底"更新；
@@ -2014,6 +2062,35 @@ class Bridge:
         # 这样正文才能用同一个 stream.id 覆盖它（见 Stream / _deliver）。
         # 在这里发就等于两套通道，手机上就是两条独立气泡 —— 正是要修掉的那个问题。
 
+    def _cwd_for(self, chat_type):
+        """这个会话该在哪个目录干活。
+
+        `chat_type` 用的是平台回调里的语义：**1 = 单聊，2 = 群聊**（见
+        `_handle_callback`）。单聊走 `CC_CWD_DM`，其余走 `CC_CWD`。
+        ⚠️ 单聊的 `chatid` 其实是 `userid`（回调里不带 chatid），所以两者
+        天然是两套 `(chat_id, user_id)`，不会互相串会话。
+        """
+        try:
+            single = int(chat_type) == 1
+        except (TypeError, ValueError):
+            single = False
+        return self.cc_cwd_dm if single else self.cc_cwd
+
+    def _session_for(self, chatid, chat_type, userid):
+        """取这一轮的 `(session_id, cwd)`；路由变了就清掉旧会话。
+
+        Claude 的会话文件是**按 cwd 分目录**存的 ⇒ 换目录后旧 session_id 一定
+        resume 不上。与其让它失败再兜底，不如当场换目录 + 新建会话，并留日志。
+        """
+        want = self._cwd_for(chat_type)
+        session_id, cwd = self.store.get_session(chatid, userid, want)
+        if cwd != want:
+            log.warning("[job] cwd 路由与记录不一致（%s → %s），换目录并新建会话",
+                        cwd, want)
+            self.store.save_session(chatid, userid, None, want)
+            return None, want
+        return session_id, cwd
+
     def _is_busy(self):
         with self._job_lock:
             return self._current is not None
@@ -2046,6 +2123,7 @@ class Bridge:
     def _handle_control(self, cmd, chatid, chat_type, userid, response_url):
         if cmd == "/new":
             self.store.clear_session(chatid, userid)
+            self._last_usage.pop((chatid, userid), None)   # 旧上下文读数不能留着
             self._bump_epoch(chatid, userid)     # 让**正在跑**的旧任务别把旧会话写回来
             log.info("[ctl] /new user=%s", userid)
             self.reply(response_url, "已开新会话：下一轮不会记得之前的内容。")
@@ -2063,9 +2141,14 @@ class Bridge:
             return
 
     # -- /status 卡片 --
-    def _status_pairs(self, chatid, userid):
-        """状态键值对。文本版和卡片版都用它，保证两处**永远一致**。"""
-        sid, cwd = self.store.get_session(chatid, userid, self.cc_cwd)
+    def _status_pairs(self, chatid, chat_type, userid):
+        """状态键值对。文本版和卡片版都用它，保证两处**永远一致**。
+
+        ⚠️ 默认 cwd 必须按 `chat_type` 取 —— 不然私聊在还没跑过第一轮时，
+        `/status` 会显示群聊那个目录。
+        """
+        sid, cwd = self.store.get_session(chatid, userid,
+                                          self._cwd_for(chat_type))
         with self._job_lock:
             cur = dict(self._current) if self._current else None
         usage = (self._last_usage.get((chatid, userid)) or "").replace("📊 ", "").strip()
@@ -2078,7 +2161,7 @@ class Bridge:
             ("工作区", cwd),
         ]
 
-    def _status_card(self, chatid, userid):
+    def _status_card(self, chatid, chat_type, userid):
         """按钮卡。`card_action` 是**恒填**的：官方文档标"否"，实测不带它平台拒收 42045
         （2026-10-29，见 DECISIONS §21.9）。"""
         return {
@@ -2089,7 +2172,8 @@ class Bridge:
             "main_title": {"title": f"{self.bot_name} · 状态",
                            "desc": "企微 ⇄ 本机 Claude Code"},
             "horizontal_content_list": [{"keyname": k, "value": v}
-                                         for k, v in self._status_pairs(chatid, userid)],
+                                         for k, v in self._status_pairs(chatid, chat_type,
+                                                                         userid)],
             # ⚠️ 按钮文字**只能是 2 个字**：实测 4 个字会被截断，
             # 手机上显示成「清...」、PC 上「清上...」（2026-10-29 用户实测）。
             # 语义放到 `sub_title_text` 里解释，别指望按钮放得下。
@@ -2103,17 +2187,20 @@ class Bridge:
             "card_action": {"type": 1, "url": "https://work.weixin.qq.com"},
         }
 
-    def _status_text(self, chatid, userid):
+    def _status_text(self, chatid, chat_type, userid):
         return ("**/status**\n"
-                + "\n".join(f"> {k}：{v}" for k, v in self._status_pairs(chatid, userid)))
+                + "\n".join(f"> {k}：{v}"
+                            for k, v in self._status_pairs(chatid, chat_type, userid)))
 
     def _status_async(self, chatid, chat_type, userid):
         """在旁路线程里发状态卡（会等平台回执，不能占读线程）。"""
         def _go():
-            r = self.send_card(chatid, chat_type, self._status_card(chatid, userid))
+            r = self.send_card(chatid, chat_type,
+                               self._status_card(chatid, chat_type, userid))
             if not r["sent"]:
                 log.warning("[card] /status 卡片未送达（%s），退回文本", r["errmsg"])
-                self.send_chunks(chatid, chat_type, self._status_text(chatid, userid))
+                self.send_chunks(chatid, chat_type,
+                                 self._status_text(chatid, chat_type, userid))
         threading.Thread(target=_go, daemon=True).start()
 
     def _handle_card_event(self, msg):
@@ -2145,7 +2232,8 @@ class Bridge:
             return
         if key == "status_clear":
             self.store.clear_session(chatid, userid)
-            self._bump_epoch(chatid, userid)     # 与 `/new` 同一条语义
+            self._last_usage.pop((chatid, userid), None)   # 与 `/new` 同一条语义
+            self._bump_epoch(chatid, userid)
             self.send_markdown(chatid, chat_type,
                                "✅ 已开新会话：下一轮不会记得之前的内容。")
             return
@@ -2193,8 +2281,21 @@ class Bridge:
 
     # -- 审批卡片（Phase 3）：hook 写请求 → 桥发卡 → 点击写决定 --
     def _approval_env(self, chatid, chat_type, userid):
-        """这一轮要注入给 claude 子进程的环境变量（hook 靠它找目录 + 找会话）。"""
+        """这一轮要注入给 claude 子进程的环境变量（hook 靠它找目录 + 找会话）。
+
+        ⚠️ **私聊默认也注入**（`CC_APPROVAL_DM=1`）⇒ 群聊和私聊走同一套弹卡流程。
+        设为 0 才是“私聊全自动”的显式选择：此时不注入 `CC_APPROVAL_DIR`，
+        目标工作区的 hook 若按约定在无 env 时放行，就不会拦人
+        （见 `tools/approval_hook.py` 开头：它是可随仓库发布的空壳）。
+        ⚠️ 只对“无 env 就 fail-open”的 hook 成立；换用别的 hook 时，行为由它决定。
+        """
         if not self.approval_dir:
+            return None
+        try:
+            single = int(chat_type) == 1
+        except (TypeError, ValueError):
+            single = False
+        if single and not self.approval_dm:
             return None
         e = {
             "CC_APPROVAL_DIR": self.approval_dir,
@@ -2417,21 +2518,15 @@ class Bridge:
             self._finish(st, chatid, chat_type, "（空消息，未执行）")
             return
 
-        session_id, cwd = self.store.get_session(chatid, userid, self.cc_cwd)
+        session_id, cwd = self._session_for(chatid, chat_type, userid)
         if not os.path.isdir(cwd):
-            # 会话表里记着的老 cwd 可能已被删/搬走（或者用户改了 `.env` 的 CC_CWD）。
-            # 直接报错会让这个会话**永久失败**（连 /new 都救不回来，因为 cwd 不跟着清），
-            # 所以先回落到配置的 cwd 并就地修好记录。
-            if os.path.isdir(self.cc_cwd) and cwd != self.cc_cwd:
-                log.warning("[job] 记录的 cwd 不存在（%s），回落到 CC_CWD=%s",
-                            cwd, self.cc_cwd)
-                cwd = self.cc_cwd
-                self.store.save_session(chatid, userid, session_id, cwd)
-                session_id = None          # 目录都换了，别拿旧 session 去 resume
-            else:
-                self._finish(st, chatid, chat_type,
-                             f"❌ 启动目录不存在：`{cwd}`\n> 请检查 `.env` 的 `CC_CWD`")
-                return
+            # 配置的目录被删/搬走。**不静默回落到另一个项目** —— 那会让 Agent 在
+            # 用户没预期的仓库里动手，比报错危险得多。
+            key = "CC_CWD_DM" if cwd == self.cc_cwd_dm and self.cc_cwd_dm != self.cc_cwd \
+                else "CC_CWD"
+            self._finish(st, chatid, chat_type,
+                         f"❌ 启动目录不存在：`{cwd}`\n> 请检查 `.env` 的 `{key}`")
+            return
 
         with self._job_lock:
             self._current = {"started": time.time(), "text": text[:60],
@@ -2794,6 +2889,19 @@ def main():
         return 2
 
     cc_cwd = cfg("CC_CWD", ROOT)
+    # 私聊专用目录。留空 = 跟群聊共用 `CC_CWD`（老行为，原样兼容）。
+    cc_cwd_dm = cfg("CC_CWD_DM") or cc_cwd
+    if cc_cwd_dm != cc_cwd and not os.path.isdir(cc_cwd_dm):
+        # **拒绝启动**，别静默退化成"私聊还在旧目录" —— 用户会以为切过去了，
+        # 实际在那个旧项目里动手。
+        log.error("[main] CC_CWD_DM 指向的目录不存在：%s", cc_cwd_dm)
+        log.error("[main] 私聊会路由到这里；建好目录或改掉这个配置再启。")
+        return 4
+    # 私聊是否也挂审批卡。默认开：审批一旦启用（CC_APPROVAL=1），群聊和私聊都挂卡。
+    # 设 0 是显式选择“私聊全自动”。
+    approval_dm_raw = cfg("CC_APPROVAL_DM", "")
+    approval_dm = (approval_dm_raw.strip().lower() not in ("0", "false", "no", "off", "")
+                   ) if approval_dm_raw else True
     runner = Runner(
         exe=cfg("CC_CLAUDE_EXE", os.path.expanduser(r"~\.local\bin\claude.exe")),
         model=cfg("CC_MODEL"),
@@ -2830,23 +2938,36 @@ def main():
         # 两道自检缺一不可：
         #   ① 静态 —— Claude **会不会加载**这个 hook（settings 注册 + setting-sources）
         #   ② 运行 —— 这个 hook **跑不跑得起来**（真起一个进程，要求它写出请求）
-        ok_cfg, why_cfg = approval_configured(cc_cwd, runner.sources)
-        ok_run, why_run = (False, "（静态检查没过，未执行）")
-        if ok_cfg:
-            ok_run, why_run = approval_selfcheck(cc_cwd, approval_dir)
-        if not (ok_cfg and ok_run):
-            # ⚠️ **拒绝启动**，不再"降级成不启用审批"（2026-10-29 复核 #2①）。
-            # 原写法：自检失败只打一行 ERROR，然后把 approval_dir 置空照常启动 ——
-            # 用户明明按了"要审批"，实际却在**全自动无闸**状态下跑。那和"假装有闸门"没区别。
-            log.error("[approval] 你设了 CC_APPROVAL=1，但审批**没法真正生效** —— 拒绝启动。")
-            log.error("[approval] ① 加载链路：%s", why_cfg)
-            log.error("[approval] ② 脚本可跑：%s", why_run)
-            log.error("[approval] 修好再启；或不想要审批就把 .env 里的 CC_APPROVAL 改成 0"
-                      "（那是一次显式选择，不会有闸门的错觉）。")
-            return 5
-        log.info("[approval] 自检通过：%s；hook 能写出请求。审批已开启 —— 等待 %ss、"
-                 "只读直放=%s", why_cfg, cfg_int("CC_APPROVAL_WAIT_SEC", 120),
+        # ⚠️ **每个实际会用到审批的 cwd 都要过一遍**：私聊路由到另一个工作区却只检
+        # 群聊那个目录，等于给私聊留一道"看起来有、实际不跑"的空闸门。
+        cwd_checks = [("群聊", cc_cwd)]
+        if approval_dm and cc_cwd_dm != cc_cwd:
+            cwd_checks.append(("私聊", cc_cwd_dm))
+        for label, d in cwd_checks:
+            ok_cfg, why_cfg = approval_configured(d, runner.sources)
+            ok_run, why_run = (False, "（静态检查没过，未执行）")
+            if ok_cfg:
+                ok_run, why_run = approval_selfcheck(d, approval_dir)
+            if not (ok_cfg and ok_run):
+                # ⚠️ **拒绝启动**，不再"降级成不启用审批"（2026-10-29 复核 #2①）。
+                # 原写法：自检失败只打一行 ERROR，然后把 approval_dir 置空照常启动 ——
+                # 用户明明按了"要审批"，实际却在**全自动无闸**状态下跑。那和"假装有闸门"没区别。
+                log.error("[approval] 你设了 CC_APPROVAL=1，但 %s 的审批**没法真正生效**"
+                          " —— 拒绝启动。目录：%s", label, d)
+                log.error("[approval] ① 加载链路：%s", why_cfg)
+                log.error("[approval] ② 脚本可跑：%s", why_run)
+                log.error("[approval] 修好再启；或不想要审批就把 .env 里的 CC_APPROVAL 改成 0"
+                          "（那是一次显式选择，不会有闸门的错觉）。")
+                return 5
+            log.info("[approval] %s 自检通过：%s；hook 能写出请求。", label, why_cfg)
+        log.info("[approval] 审批已开启（群聊%s）—— 等待 %ss、只读直放=%s",
+                 " + 私聊" if approval_dm else "；私聊已显式设为全自动",
+                 cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                  cfg("CC_APPROVAL_ALLOW") or "(默认 Read,Grep,Glob,TodoWrite)")
+    elif approval_dm_raw:
+        # 显式设了 CC_APPROVAL_DM、但审批整体没开 ⇒ 别让用户以为私聊在挂卡。
+        log.warning("[approval] 你显式设了 CC_APPROVAL_DM，但 CC_APPROVAL=0 ⇒ "
+                    "审批整体未启用，群聊和私聊都不会弹卡。")
     bridge = Bridge(bot_id, secret, cfg("WECOM_ALLOWED_USERIDS"),
                     cfg("WECOM_ALLOWED_CHATIDS"), cfg("WECOM_BOT_NAME"),
                     store, runner, cc_cwd,
@@ -2858,13 +2979,17 @@ def main():
                     approval_dir=approval_dir,
                     approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                     approval_allow=cfg("CC_APPROVAL_ALLOW"),
-                    user_labels=cfg("WECOM_USER_LABELS"))
+                    user_labels=cfg("WECOM_USER_LABELS"),
+                    cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
 
     if cfg_bool("CC_KEEP_AWAKE", True):
         start_keep_awake()
 
-    log.info("[main] cwd=%s 档位=%s 模型=%s", cc_cwd, runner.perm_mode,
-             runner.model or "(默认别名)")
+    log.info("[main] cwd=%s%s 档位=%s 模型=%s", cc_cwd,
+             (f"（私聊={cc_cwd_dm}，审批卡={'开' if approval_dm else '关'}）"
+              if cc_cwd_dm != cc_cwd else
+              f"（私聊与群聊同目录，审批卡={'开' if approval_dm else '关'}）"),
+             runner.perm_mode, runner.model or "(默认别名)")
     if runner.perm_mode in ("bypassPermissions", "auto", "acceptEdits"):
         log.warning("[main] 档位=%s ⇒ 模型会**直接执行本机命令、直接改文件**，"
                     "不弹任何确认（实测这三档在 headless 下都不拦 Bash）。"

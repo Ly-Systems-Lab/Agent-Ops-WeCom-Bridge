@@ -106,6 +106,7 @@ cp .env.example .env
 | `WECOM_ALLOWED_USERIDS` | **你自己的 userid**，逗号分隔。**留空会拒绝启动**（见下面「安全模式」） |
 | `ANTHROPIC_*` | 见下 |
 | `CC_CWD` | 你想让机器人待在哪个目录干活。一个 session 与一个 cwd 绑定 |
+| `CC_CWD_DM` | **可选**。私聊专用的目录；留空 = 跟群聊共用 `CC_CWD`。两者各自加载各自的 `CLAUDE.md` / 项目 memory / 会话 |
 
 **为什么 `ANTHROPIC_*` 必须自己填**：桥用 `--setting-sources project,local` 排掉 user 设置，
 用来挡掉桌面宠物那类 hook（它们会把 headless 卡死，见 §3.7）。
@@ -151,13 +152,18 @@ cp .env.example .env
 确认通路没问题、并且清楚后果之后，再把 `CC_PERMISSION_MODE` 改成 `bypassPermissions`
 （全自动：模型可以直接在你机器上执行命令、改文件）。
 
-**三种形态，切换方式都是「改 `.env` → 重启桥」**（聊天里**没有**切换指令，理由见 §6.10）：
+**三种基础形态 + 一个私聊变体，切换方式都是「改 `.env` → 重启桥」**（聊天里**没有**切换指令，理由见 §6.10）：
 
-| 形态 | 配置 |
-|---|---|
-| 只读（默认） | `CC_PERMISSION_MODE=dontAsk` |
-| 全自动 | `CC_PERMISSION_MODE=bypassPermissions` |
-| 逐次询问（每次有副作用的调用都问一句） | `bypassPermissions` + `CC_APPROVAL=1` |
+| 形态 | 配置 | 群聊 / 私聊 |
+|---|---|---|
+| 只读（开箱默认） | `CC_PERMISSION_MODE=dontAsk` | 两边都不能执行命令，不需要卡片 |
+| 全自动 | `CC_PERMISSION_MODE=bypassPermissions` | 两边都直接执行，不弹卡 |
+| **逐次询问（推荐）** | `bypassPermissions` + `CC_APPROVAL=1` | **默认群聊 + 私聊都挂卡**（`CC_APPROVAL_DM` 默认 1） |
+| 逐次询问 + 私聊全自动（可选） | 同上 + `CC_APPROVAL_DM=0` | 群聊挂卡；私聊全自动 |
+
+> **默认口径**：开箱是只读（最安全）；一旦打开 `CC_APPROVAL=1`，**群聊和私聊默认都挂卡**。
+> 私聊全自动是**显式可选项**，必须自己写 `CC_APPROVAL_DM=0` —— 不是默认值。
+> 工作区怎么分、两种场景怎么配，见 **§6.11**。
 
 ### ⑤ 常驻（可选）
 
@@ -230,22 +236,43 @@ claude -p --output-format json < prompt.txt
 
 Windows 命令行约 32KB 上限，长提示词（贴一段代码/日志）会直接失败或触发古怪的转义问题。stdin 没这个限制。
 
-### 3.4 `usage` / `modelUsage` 里能拿到上下文占用
+### 3.4 `usage` / `modelUsage` 里能拿到上下文占用（⚠️ 别把累计值当上下文）
 
 `modelUsage[<model>].contextWindow` 直接给了**上下文窗口大小**，不用自己猜。
-当前占用 ≈ `inputTokens + cacheReadInputTokens + cacheCreationInputTokens`。
 
-⇒ 这就是「回复尾部附一行 `📊 上下文 9.7% (97.4k/1.0M)`」的实现方式，**零额外模型调用**：
+但**分子不能取 `modelUsage` 的累计值**：`modelUsage` 是一次 `claude -p` 里
+**所有 API 调用**的合计。只要这轮用过工具，同一段上下文就会被反复重发，
+累计值会随调用次数线性膨胀 —— 实测一个普通任务用了 4~5 次调用，
+`modelUsage` 合计 **93.7k**，而最后一次调用的 prompt 只有 **45k**（窗口 1M）：
+用累计值会报 **9.4%**，真实占用只有 **4.5%**。工具轮次再多，累计值就会超过
+窗口本身（实测出现过 **783.8%** 这种假读数）。
+
+正确做法：从 `stream-json` 的 **`assistant` 事件**里取**最后一条**
+`message.usage`。它的 `input_tokens + cache_read_input_tokens +
+cache_creation_input_tokens (+ output_tokens)` 才是**本轮结束时的真实上下文**。
 
 ```python
-def usage_footer(data):
-    info = next(iter((data.get("modelUsage") or {}).values()), None)
-    if not info or not info.get("contextWindow"):
+def usage_footer(data, last_usage=None, last_model=None):
+    mu = data.get("modelUsage") or {}
+    if not mu:
         return ""
-    used = (info.get("inputTokens", 0) + info.get("cacheReadInputTokens", 0)
-            + info.get("cacheCreationInputTokens", 0))
-    return f"\n\n> 📊 上下文 {used*100/info['contextWindow']:.1f}% " \
-           f"({used/1000:.1f}k/{info['contextWindow']/1e6:.1f}M)"
+    info = mu.get(last_model) if last_model else None
+    if info is None and last_model:
+        # 模型名可能带后缀（如 `[1m]`），按前缀双向匹配一次
+        for name, v in mu.items():
+            if name.startswith(last_model) or last_model.startswith(name):
+                info = v
+                break
+    if info is None:
+        info = max(mu.values(), key=lambda x: x.get("contextWindow") or 0)
+    win = (info or {}).get("contextWindow") or 0
+    if not win or not last_usage:
+        return ""          # 拿不到逐条 usage 就别显示，别拿累计值冒充
+    used = sum(last_usage.get(k, 0) or 0 for k in (
+        "input_tokens", "cache_read_input_tokens",
+        "cache_creation_input_tokens", "output_tokens"))
+    return f"\n\n> 📊 上下文 {used*100/win:.1f}% " \
+           f"({used/1000:.1f}k/{win/1e6:.1f}M)"
 ```
 
 好处很实际：**在你决定「要不要 /new」之前，先能看到还剩多少上下文。**
@@ -559,6 +586,9 @@ errcode 40058: body.markdown.content exceed max length 20480
 ### 6.7 上下文余量提示（3.4 的实现）
 
 `/status` 里、或者每条回复尾部加一行 `📊 上下文 12.3% (123k/1.0M)`。
+分母取 `modelUsage[<model>].contextWindow`；分子取**本轮最后一条 `assistant` 事件**
+的 `message.usage`（最后一次 API 调用的 prompt 大小），**不是 `modelUsage` 的累计值** ——
+后者会随工具轮次膨胀，实测出现过 `783.8%` 的假读数（见 §3.4）。
 **成本近乎为零**（进程内拼字符串，不额外调模型），但能让你提前知道什么时候该 `/new`。
 
 ### 6.8 常驻化：自启 / 单实例 / 自愈（Phase 4）
@@ -718,6 +748,87 @@ errcode 40058: body.markdown.content exceed max length 20480
   可以安全地随仓库发布，别人不启用时它只是个 ~150ms 的摆设。
 - ⚠️ `.claude/settings.json` 里**不要写 `//` 注释键**：校验失败会被**静默忽略**
   （`-p` 模式不弹提示），表现是 hook 悄悄消失。
+
+### 6.11 群聊 / 私聊：切换工作区与信任模式（刻意设计的可选项）
+
+> 这一节回答两个问题：**“群聊和私聊能不能干不同的活？”** 和
+> **“私聊能不能不弹卡？”** 两个都是**显式可选项**；默认是**群聊 + 私聊都挂审批卡**。
+
+#### 两个维度，别混在一起
+
+| 维度 | 配什么 | 决定什么 |
+|---|---|---|
+| **工作区** | `CC_CWD`（群聊）/ `CC_CWD_DM`（私聊） | Agent 在哪个目录干活、加载哪份 `CLAUDE.md` / 项目 memory / 会话 |
+| **信任模式** | `CC_PERMISSION_MODE` + `CC_APPROVAL` + `CC_APPROVAL_DM` | 能不能执行命令、要不要人工点「允许 / 拒绝」 |
+
+**一个 session 与一个 cwd 绑定**：换目录 = 换一整套项目上下文，旧会话**不会**跟着过去。
+
+#### 场景对照
+
+| 场景 | 核心诉求 | 安全机制（HITL） | 适用人群 |
+|---|---|---|---|
+| 💬 群聊（Team） | 多人协作、透明可控 | **审批卡片（默认）**：Agent 的指令变成卡片，人工点「确认」才执行 | 演示、团队协同、高风险操作 |
+| 👤 私聊（Solo） | 极致效率、连续指令 | **审批卡片（默认）**；也可显式开**全自动（可选）** | 个人开发者、日常高频操作 |
+
+> **默认口径再强调一次**：本项目默认**不是**“私聊免审批”。
+> 只要 `CC_APPROVAL=1`，群聊和私聊**都挂卡**；私聊全自动需要你自己写
+> `CC_APPROVAL_DM=0` —— 这是一次有意识的选择，不是默认行为。
+> 开箱默认仍是**只读**（`dontAsk`）：连命令都不执行，所以也不需要卡片。
+
+#### 切换工作区（可选）
+
+```ini
+# 群聊：团队共用的项目目录
+CC_CWD=C:\work\team-project
+
+# 私聊：你自己的高频工作目录；留空 = 跟群聊共用 CC_CWD
+CC_CWD_DM=C:\work\my-workspace
+```
+
+规则：
+
+1. **路径写展开后的绝对路径**（`.env` 不做变量展开）。
+2. **`CC_CWD_DM` 指向的目录不存在 ⇒ 拒绝启动**（退出码 4），不会静默回落到群聊目录。
+   `CC_CWD` 不存在时桥仍会启动，但每条任务会明确报错并提示改 `CC_CWD` —— 同样**不回落**到别的项目。
+3. **换目录后旧 session 无法 resume**（Claude 的会话文件按 cwd 分目录存）：
+   桥会当场新建会话，并在日志里打
+   `[job] cwd 路由与记录不一致（旧 → 新），换目录并新建会话`。
+4. `/status` 的「工作区」一行按**当前会话类型**显示：群聊看 `CC_CWD`，私聊看 `CC_CWD_DM`。
+5. 两个目录**各自加载各自的** `CLAUDE.md` / 项目 memory / `.claude/settings.json`。
+
+⚠️ **审批开启时的额外要求**：如果 `CC_APPROVAL=1` 且 `CC_APPROVAL_DM=1`（默认），
+**私聊工作区也必须装好** `.claude/settings.json` + `tools/approval_hook.py`，
+否则桥启动时的两道自检不过，直接拒绝启动（退出码 5）。
+不想在私聊目录装 hook，就走下面的“私聊全自动”——但那是显式选择。
+
+#### 切换信任模式（可选）
+
+| 形态 | 配置 | 效果 |
+|---|---|---|
+| 只读（开箱默认） | `CC_PERMISSION_MODE=dontAsk` | 命令 / 写文件一律被拒 |
+| 全自动 | `CC_PERMISSION_MODE=bypassPermissions` | 直接执行，不弹确认 |
+| **逐次询问（推荐）** | `bypassPermissions` + `CC_APPROVAL=1` | 群聊 + 私聊都挂卡（`CC_APPROVAL_DM` 默认 1） |
+| 逐次询问 + 私聊全自动 | 同上 + `CC_APPROVAL_DM=0` | 群聊挂卡；私聊全自动 |
+
+- 切换方式永远是 **改 `.env` → 重启桥**；聊天里没有切档指令（防“谁能发消息谁就能改边界”）。
+- 🚨 `CC_APPROVAL` **不替代** `dontAsk`：档位优先，只读档下点了「允许」也不会执行。
+- 🚨 `CC_APPROVAL_DM=1` 只有在 `CC_APPROVAL=1` 时才有意义；`CC_APPROVAL=0` 时整个审批不启用。
+- ⚠️ **私聊全自动的安全前提**：`CC_APPROVAL_DM=0` 只是让桥**不注入** `CC_APPROVAL_DIR`。
+  本项目自带的 hook 在无 env 时立刻放行；如果你给私聊工作区换了别的 hook，
+  它的行为由那个 hook 决定，不保证放行。
+
+#### 验证清单
+
+1. 启动日志出现 `[main] cwd=...（私聊=...，审批卡=开/关）`；
+   两个目录相同时显示 `（私聊与群聊同目录，审批卡=开/关）`。
+2. `CC_APPROVAL=1` 时出现 `[approval] 审批已开启（群聊 + 私聊）`；
+   只开群聊时出现 `（群聊；私聊已显式设为全自动）`。
+3. 聊天里发 `/status`，「工作区」应分别显示群聊 / 私聊目录。
+4. 第一次在私聊里发消息（且刚改过 `CC_CWD_DM`）时，日志出现
+   `[job] cwd 路由与记录不一致 … 换目录并新建会话` —— 这是预期行为，不是故障。
+5. 审批开启时，在群聊和私聊各触发一次 `Bash` / `Write`，两边都应出现「允许 / 拒绝」卡。
+
+> 一句话：**默认全挂卡；私聊全自动、群聊/私聊分工作区，都是要你亲手打开的显式选项。**
 
 ---
 

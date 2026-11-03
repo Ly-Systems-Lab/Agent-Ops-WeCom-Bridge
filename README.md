@@ -104,7 +104,8 @@
 ```
 
 **为什么不是一个"全能大管家"**：一个 Agent = 一个「工作区 + 记忆 + 大脑」，跑在某台设备上；
-企微群、私聊、直接开终端，只是**同一个 Agent 的不同窗口**，换个窗口进来接着做，上下文不丢。
+企微群、私聊、直接开终端，默认是**同一个 Agent 的不同窗口**，换个窗口进来接着做，上下文不丢
+（把私聊用 `CC_CWD_DM` 指到另一个工作区时，它就变成另一个 Agent 的窗口——这是可选项，见教程 §6.11）。
 各 Agent 之间**不能直接通信是故意的**：能互通就会冒出"谁听谁的"和"私下串通"两件事 ——
 前者还能用权限压住，后者压不住。不通信，这两件事就都不存在。
 ⇒ 于是**人既是唯一的路由器，也是唯一的共享上下文**，层级活在「人的判断 + 群聊 `@`」里。
@@ -144,15 +145,15 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 |---|---|
 | 长连接 | 主动外连 `wss://openws.work.weixin.qq.com`；30s 心跳；断线指数退避（3s→30s，连上即重置） |
 | 鉴权 | `from.userid` **白名单**是唯一真正的鉴权；群里的 `@` 只是消息路由。**留空即拒绝启动**（fail-closed） |
-| 群聊 / 私聊 | 群里 `@` 它、私聊直接发；两条路径**各自独立上下文**，共用同一个 `cwd` |
+| 群聊 / 私聊 | 群里 `@` 它、私聊直接发；两条路径**各自独立上下文**，默认共用一个 `cwd`，也可用 `CC_CWD_DM` 分开（见教程 §6.11） |
 | 会话 | 每个 `(会话, 用户)` 一份 session，跨消息续接；`/new` 清上下文 |
 | 控制指令 | `/status` `/new` `/stop` —— **忙碌时也即时可用**（`/status` 是按钮卡） |
 | 忙碌语义 | 处理中再发 → 回「忙碌中…本条已忽略」，**丢弃不排队**（防输入轰炸） |
 | 长回答 | 先整条发；只有被平台 `40058` 拒了才切片（每片等回执，失败会明说哪段没送到） |
-| 上下文余量 | 每条回复尾部 `📊 上下文 x% (m/n)`，分母取自 `modelUsage.contextWindow` |
+| 上下文余量 | 每条回复尾部 `📊 上下文 x% (m/n)`：分母取 `modelUsage.contextWindow`，分子取**本轮最后一次 assistant 调用的 usage**（不是累计值） |
 | **真进度** | 气泡显示「正在跑（12s · 第 3 步）+ 当前工具」；**变化才推**，附 60s 兜底心跳 |
 | **模板卡片** | `/status` = 刷新 / 清空 / 停止。⚠️ 按钮文字**只有 2 个字的余量**：4 个字会被截成「清...」 |
-| **审批卡片** | `Bash`/`Write`/`Edit` 先发「允许 / 拒绝」，点了才执行；只读直放。**仅全自动档位下有效** |
+| **审批卡片** | `Bash`/`Write`/`Edit` 先发「允许 / 拒绝」，点了才执行；只读直放。**仅全自动档位下有效**；开启后群聊 + 私聊默认都挂卡（`CC_APPROVAL_DM=1`） |
 | 常驻 | 登录自启、单实例、看门狗自愈、日志保留 14 天、运行期间不睡眠 |
 | 企业能力 | 邮件 / 文档 / 表格 / 日程 / 会议 / 待办 / 微盘 / 通讯录 / 读 7 天群历史 —— **由官方 `wecom-cli` 提供**，本仓零代码接入 |
 | 设备总线 | MQTT / HTTP 控端侧设备 —— **在数据面那个仓**（[`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub)），不在本仓库 |
@@ -213,6 +214,11 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | **全自动** | `CC_PERMISSION_MODE=bypassPermissions` | 模型直接在你机器上执行命令、改文件，不弹任何确认 |
 | **逐次询问** | `bypassPermissions` + `CC_APPROVAL=1` | 有副作用的调用（`Bash`/`Write`/`Edit`/`WebFetch`）先发「允许 / 拒绝」卡；只读工具（`Read`/`Grep`/`Glob`/`TodoWrite`）直放 |
 
+**群聊 / 私聊的默认**：审批一旦开启（`CC_APPROVAL=1`），**群聊和私聊都挂卡**
+（`CC_APPROVAL_DM` 默认 1）。私聊全自动是**显式可选项**：设 `CC_APPROVAL_DM=0`。
+工作区也可以分开（`CC_CWD` / `CC_CWD_DM`）—— 完整教程见
+[§6.11](docs/claude-code-wecom-guide.md)。
+
 三条必须知道的事实（都是实测，细节见教程
 [§3.5](docs/claude-code-wecom-guide.md) / [§6.10](docs/claude-code-wecom-guide.md)）：
 
@@ -230,11 +236,12 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
   **留空 ⇒ 拒绝启动**；要开放全部必须显式 `WECOM_ALLOW_ANYONE=1`。
 - 想要全自动就把 `CC_PERMISSION_MODE` 改成 `bypassPermissions` —— 那是**一次有意识的选择**。
   ⚠️ 别以为 `acceptEdits` 更安全：实测在 headless 下它**照样执行 Bash**，与全自动无区别。
-- **审批卡片（`CC_APPROVAL=1`）默认关**，而且**不替代 `dontAsk`**。它的否决权握在
+- **审批整体默认关（`CC_APPROVAL=0`）**；一旦开启（`CC_APPROVAL=1`），**群聊 + 私聊默认都挂卡**（`CC_APPROVAL_DM=1`），而且**不替代 `dontAsk`**。它的否决权握在
   [`tools/approval_hook.py`](tools/approval_hook.py) 自己手里：harness 超时/崩溃一律**放行**，
   所以 hook 自己 120 秒到点主动拒绝，harness 的 300 秒只是兜底。
   开了它但**自检不过就拒绝启动**（不再静默降级成全自动）—— 自检查两件事：Claude 真的会加载
   这个 hook（`settings.json` 注册 + `--setting-sources` 含 `project`），以及 hook 脚本真的跑得起来。
+  群聊 / 私聊用不同工作区时，**每个会挂卡的工作区各查一遍**，任一不过就拒绝启动。
 - **凭证不进代码、不进文档、不进日志**：`bot_secret`、`ANTHROPIC_AUTH_TOKEN` 只从 `.env` 读，
   日志里最多出现键名和长度，不出现值。
 - **但运行日志**会**记 `userid` / `chatid`，以及消息正文的前 80 个字符** —— 排查"谁发的、
