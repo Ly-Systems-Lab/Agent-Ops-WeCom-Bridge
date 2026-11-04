@@ -781,6 +781,45 @@ errcode 40058: body.markdown.content exceed max length 20480
 > `CC_APPROVAL_DM=0` —— 这是一次有意识的选择，不是默认行为。
 > 开箱默认仍是**只读**（`dontAsk`）：连命令都不执行，所以也不需要卡片。
 
+#### 🚨 默认工作区：别用桥自己的目录
+
+`.env.example` 里 `CC_CWD` 的示例故意写成**独立目录**，不是本仓库。原因不是洁癖 ——
+桥的目录里有三样东西，都不该摆在 Agent 手边：
+
+| 桥目录里的东西 | 被读到的后果 |
+|---|---|
+| `.env`（Bot Secret、白名单、账号 ID） | 机器人被接管 = 企微应用的凭据也一起出去 |
+| `logs/`（每条消息的正文、userid、审批记录） | 它能翻出**之前所有对话**，包括 `/new` 之前的 |
+| `data/`（SQLite：会话映射、已见消息） | 同上，还能拿到**别的会话**的会话句柄 |
+
+**推荐**：另建一个空目录专门给机器人当工作区（例如 `C:\work\agent-workspace\`），
+按需往里放项目。要它干真活时再切过去 —— 见下面的「切换工作区」。
+
+#### `/new` 到底清掉了什么
+
+**`/new` 清的是「模型上下文」，不是「可获取的信息源」。**
+
+桥在这一层做的只有一件事：把 `sessions` 表里这个 `(chatid, userid)` 的 `session_id` 清空，
+下一轮换一个新会话。可是同一个模型至少还有三条路能把旧内容捞回来：
+
+| 信息源 | 在哪 | 换工作区能不能挡住 |
+|---|---|---|
+| **harness 自己的会话存储** | 因 harness 而异 | 看情况，见下 |
+| **桥自己的日志** | `logs/`（在桥目录里） | ✅ 能 |
+| **平台提供的聊天历史** | 企微侧的会话查询能力 | ❌ 跟目录无关 |
+
+⚠️ 第一条**最容易被误判**，因为它的位置**不是统一的**：
+
+- **Claude Code**：`~/.claude/projects/<按 cwd 编码的目录>/` —— **按工作区隔离**，换目录基本挡得住；
+- **Codex**：`~/.codex/sessions/<日期>/` —— **全机器一份**，换工作区**完全挡不住**。
+
+所以：
+
+1. **默认用独立工作区**（上一条）—— 这是**安全默认**，不是可选项；
+2. 但它**不等于隔离**。真要隔离，得在**权限层**把这些路径 deny 掉，
+   并且**回读确认档位真的生效**（不要相信「我设了」）；
+3. 对外描述 `/new` 时写「**不继承当前上下文**」，不要写「**忘掉了**」。
+
 #### 切换工作区（可选）
 
 ```ini
@@ -900,14 +939,32 @@ def worker_loop():
 
 **一共 6 个适配点。换 harness 时只改这 6 处，其余照抄：**
 
-| # | 适配点 | 本仓（Claude Code）的答案 | 你要自己回答的 |
-|---|---|---|---|
-| 1 | 怎么启动一次执行 | `claude -p --output-format stream-json` | 你的 harness 的非交互 / 服务模式是什么 |
-| 2 | 怎么拿真进度 | 读 stdout 的 `stream-json` | 有没有事件流？**必须先订阅再触发**，否则丢开头 |
-| 3 | 怎么判成败 | 只信 `is_error` | 你的返回值里**哪个字段才是终态**（不是"有没有 id"） |
-| 4 | 怎么打断 | `taskkill /T /F` 杀进程树 | 有没有一等公民的 interrupt —— 有就别杀进程 |
-| 5 | 怎么拦危险动作 | `PreToolUse` hook + 目录协议 | 审批回调在哪；**deny 不等于隔离边界** |
-| 6 | 怎么续上下文 | `--resume <session_id>` | 会话句柄怎么拿、怎么复用、什么时候该换新的 |
+| # | 适配点 | Claude Code | OpenCode | Codex |
+|---|---|---|---|---|
+| 1 | 怎么启动一次执行 | `claude -p --output-format stream-json` | 常驻服务 + `POST /api/session/{id}/prompt` | app-server JSON-RPC：`thread/start` → `turn/start` |
+| 2 | 怎么拿真进度 | 读 stdout 的 `stream-json` | `GET /api/event`（SSE） | `item/*` 通知 + `item/agentMessage/delta` |
+| 3 | 怎么判成败 | 只信 `is_error` | 由事件流最终状态判 | `turn/completed` 的 `turn.status`（**`completed` 才算成功**） |
+| 4 | 怎么打断 | `taskkill /T /F` 杀进程树 | `POST /api/session/{id}/interrupt` | `turn/interrupt`（`{threadId, turnId}`） |
+| 5 | 怎么拦危险动作 | `PreToolUse` hook + 目录协议 | `permission.asked` → `POST .../permission/{rid}/reply` | 反向请求 `item/*/requestApproval` |
+| 6 | 怎么续上下文 | `--resume <session_id>` | 记 `ses_...`，同一 session 追加 prompt | 同一 `threadId` 再 `turn/start`；进程重启后 `thread/resume` |
+
+**三列答案来自三次独立接入**：Claude Code 是本仓的实现，OpenCode 与 Codex 是两个外部 harness
+照本教程接进来的（记录见 [field-reports](field-reports/README.md)）。
+**6 个点里 5 个是「同构不同名」** —— 都有会话句柄、中断接口、审批回调、事件流、终态字段，
+只有第 1 点的**形态**真不一样（子进程 / HTTP 服务 / JSON-RPC）。
+
+> ⚠️ **这三列是已验证的样本，不是支持范围的边界。**
+> 任何能跑命令的 Agent 都能照这套接 —— 换一家厂商的、开源的、**你自己写的**，流程完全一样：
+> 问题还是这 6 个，答案换成它的。表里没有你的 harness，不影响你照做。
+
+**换一个新 harness 时，你要自己回答的是这六个问题：**
+
+1. 怎么启动一次执行？（非交互 / 服务模式）
+2. 有没有事件流？**必须先订阅再触发**，否则丢开头。
+3. 哪个字段是**终态**？（不是「有没有 id」）
+4. 能中断吗？是一等公民，还是只能杀进程？
+5. 审批回调在哪？**deny 不等于隔离边界。**
+6. 会话句柄怎么拿、存在哪、跨进程能不能恢复？
 
 **进程结构**
 
