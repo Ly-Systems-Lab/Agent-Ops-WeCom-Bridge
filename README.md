@@ -271,6 +271,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | 企微长连接的**真实协议形状**（字段、三条回复通道、20480 上限） | [`docs/`](docs/claude-code-wecom-guide.md) §4 |
 | **必须自己实现的 10 个机制**（每条附"不这么做会怎样"） | [`docs/`](docs/claude-code-wecom-guide.md) §6 |
 | 让**另一个 AI Agent** 照着实现 | [`docs/`](docs/claude-code-wecom-guide.md) §8（自包含契约，可整段丢给它） |
+| **换一个聊天平台**（飞书 / 钉钉 / Slack） | [`platforms/`](platforms/README.md)：同一套约定，四个平台各答一遍 |
 | **验收清单** / 发布前红线 | [`docs/`](docs/claude-code-wecom-guide.md) §9 / §10 |
 | 代码在哪 | 见下表「目录」 |
 
@@ -285,6 +286,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | [`tools/test_phase1.py`](tools/test_phase1.py) | 单元测试（`--skip-llm` 只跑离线部分） |
 | [`.claude/settings.json`](.claude/settings.json) | 注册 `approval_hook.py`；`CC_APPROVAL=0` 时它是空壳 |
 | [`docs/`](docs/claude-code-wecom-guide.md) | 接入教程（人 + AI Agent 双读者） |
+| [`platforms/`](platforms/README.md) | 平台适配：契约 + 企业微信 / 飞书 / 钉钉 / Slack 各自的答案 |
 | [`LICENSE`](LICENSE) [`NOTICE`](NOTICE) | Apache-2.0 全文与版权声明（都在仓库根目录） |
 | `logs/` `data/` `.env` | 运行产物与凭证，**不入库** |
 
