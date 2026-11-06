@@ -2,9 +2,11 @@
 
 **为企业微信打造的重算力 Agent 控制台与运维网关**
 
+同一份内核已在**飞书**上真机打通 —— **平台是入口，不是身份。**
+
 > 🔗 **三件套** · [🧠 控制面（本仓）](https://github.com/Ly-Systems-Lab/Agent-Ops-WeCom-Bridge) · [🔌 数据面 · Edge-Hub](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub) · [🔭 总蓝图 · Architecture](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture)
 >
-> 企业微信就是你的调度台：Claude Code 等重算力 Agent 在这里被指挥、被看见、被拦下
+> 企业微信（推荐）可作为你的调度台：Claude Code 等重算力 Agent 在这里被指挥、被看见、被拦下
 > （流式进度、打断、权限拦截），原生打通 MQTT 还能直接触达物理世界。
 >
 > 它是 **Agent Ops 三件套里的「控制面」**：
@@ -22,6 +24,24 @@
 包含任务卡片（允许 / 拒绝 / 实时进度 / 上下文余量）与 `/stop` 即刻停止的完整演示。
 
 🖼️ **[实拍图集 →](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture/blob/main/docs/showcase/README.md)** · 手机端下指令、Windows 本地干活、Agent 自动修 Bug
+
+## 🧩 一份内核，不同的聊天平台
+
+这里要解决的问题从来不是「企业微信」这四个字，而是：
+
+> **人不在电脑前的时候，怎么找到并驱动那台机器上的 Agent。**
+
+企业微信只是跑得最远的那个入口。**同一份内核已经接上了形态很不一样的飞书** ——
+长连接换成官方 SDK，消息模型、卡片回调、字节上限、推送频率全都不一样，
+而「交互基准」那五条，一条都没改。
+
+| 平台 | 状态 |
+|---|---|
+| 企业微信 | **参考实现** · 真机验收 + 两次外部 Agent 独立复现 |
+| 飞书 | **真机验收** · 五项交互 + 连续在线 24 小时 + 断网自愈 |
+| 钉钉 / Slack | 能力已对照官方文档核实，**适配器未实现** |
+
+👉 想换平台，从 [`platforms/`](platforms/README.md) 开始。
 
 ## 🌌 The Manifesto | 我们的协同宣言
 
