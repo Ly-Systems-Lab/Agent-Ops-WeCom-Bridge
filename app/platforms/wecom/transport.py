@@ -302,7 +302,9 @@ class WeComTransportMixin:
 
     def stop_bot(self):
         self.stop = True
-        self.runner.kill_current()
+        # 进程退出时**所有**会话的任务都要停（2026-11-05 起不同会话可并行，
+        # 只停一个会剩下一串孤儿 claude 进程）
+        self._kill_all()
         try:
             if self.ws:
                 self.ws.close()

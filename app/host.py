@@ -5,6 +5,7 @@
 
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -104,6 +105,28 @@ class DailyFileHandler(logging.FileHandler):
         super().emit(record)
 
 
+class _RedactFilter(logging.Filter):
+    """把日志里的「凭据类查询参数」打码。
+
+    触发点：飞书 SDK 建连成功会打
+    `connected to wss://…?…&access_key=xxxx&ticket=xxxx [conn_id=…]` ——
+    这两个是**这一条连接的身份**，不该出现在任何会被传阅的日志里。
+    只打码值、保留键名，排障时仍然看得出"它带了什么参数"。
+    """
+
+    _PAT = re.compile(r"(access_key|ticket|app_secret|secret)=([^&\s\]]+)")
+
+    def filter(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True                      # 取不出消息就别拦，交给 logging 自己报
+        fixed = self._PAT.sub(r"\1=***", msg)
+        if fixed != msg:
+            record.msg, record.args = fixed, ()
+        return True
+
+
 def setup_logging(verbose=False):
     os.makedirs(LOGDIR, exist_ok=True)
     path = os.path.join(LOGDIR, f"bridge-{datetime.now():%Y%m%d}.log")
@@ -112,6 +135,18 @@ def setup_logging(verbose=False):
     fh.setFormatter(fmt)
     log.setLevel(logging.DEBUG if verbose else logging.INFO)
     log.addHandler(fh)
+    # 飞书 SDK 自己的 logger（`lark_oapi.core.log`）叫 "Lark"，它在 import 时就挂了
+    # `StreamHandler(sys.stdout)` —— 而 **pythonw 下 `sys.stdout` 是 None**，
+    # 于是它所有的 `connected to …` / `receive message loop exit` / `trying to reconnect`
+    # **全部蒸发**（2026-11-06 实测：断网 10 分钟，我们的日志一个字都没有）。
+    # ⇒ 把同一份文件 handler 也挂给它，掉线与重连才留得下证据。同一个 handler 换天一起切。
+    sdk_log = logging.getLogger("Lark")
+    sdk_log.addHandler(fh)
+    sdk_log.setLevel(logging.DEBUG if verbose else logging.INFO)
+    # ⚠️ 接上日志的同时会**接到凭据**：SDK 每次建连都把整条 URL 打出来，
+    # 里面带 `access_key=` 与 `ticket=`（2026-11-06 实测）。落盘前必须打码 ——
+    # 日志会被打包发给别人排障，那不是贴凭据的地方。
+    sdk_log.addFilter(_RedactFilter())
     # ⚠️ 自启（pythonw）时 **`sys.stdout` 是 None** —— 不加这道判断，
     # StreamHandler(None) 会在每次写日志时抛异常（被 logging 内部吞掉，但日志就少了）。
     if sys.stdout is not None:

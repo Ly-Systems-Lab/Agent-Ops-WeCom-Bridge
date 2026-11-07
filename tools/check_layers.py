@@ -26,7 +26,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "app")
 
 # 平台专有令牌：出现在核心层就是越界。新增平台时往这里加。
-FORBIDDEN_IN_CORE = ["aibot_", "websocket", "40058", "42045", "template_card"]
+# 每加一条都必须是"只有某个平台才认识"的东西 —— 通用词汇（如 chat_type / errcode）
+# 不算，那些是契约的一部分。
+FORBIDDEN_IN_CORE = [
+    # 企微
+    "aibot_", "websocket", "40058", "42045", "template_card",
+    # 飞书
+    "lark_oapi", "cardkit", "im.message.receive_v1", "card.action.trigger",
+    "230020", "230025", "open_id",
+]
 
 REVERSE_DEPS = {
     "core": ["platforms"],

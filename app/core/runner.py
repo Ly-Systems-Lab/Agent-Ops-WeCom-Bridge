@@ -84,6 +84,17 @@ class Runner:
         # 上一次 kill_current 的结果：idle / killed / failed（见 kill_current）
         self.kill_status = "idle"
 
+    def clone(self):
+        """**每个任务一份**的副本：配置共用，`_proc` / `_stopped` / `kill_status` 各自独立。
+
+        为什么需要（2026-11-05 改成按会话并行之后）：`kill_current()` 停的是
+        `self._proc`，而一个 Runner 只有一个 —— 两个会话同时跑的时候，
+        停私聊会把群聊那个一起杀掉（或者反过来）。
+        """
+        return Runner(self.exe, self.model, self.perm_mode, self.sources,
+                      self.timeout, self.allowed, self.disallowed,
+                      self.inject_env, self.show_usage)
+
     def build_env(self):
         """剥掉继承的 ANTHROPIC*/CLAUDE*，再用桥自己 .env 里的值注入。
 

@@ -1,0 +1,1 @@
+"""Slack 适配器（Socket Mode）。实现 `core/contract.py` 的 12 个 `plat_*`。"""

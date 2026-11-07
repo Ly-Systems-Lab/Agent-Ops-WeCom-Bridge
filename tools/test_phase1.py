@@ -596,6 +596,33 @@ def test_approval():
     check("卡片发不出去 ⇒ 立刻拒绝",
           os.path.exists(d3) and open(d3, encoding="utf-8").read().strip() == "deny")
 
+    # ⚠️ 2026-11-07 补（真机漏洞）：`/stop` 之后，同会话的待审批必须**一起收口**。
+    #    实测现象：停止 9 秒后点「允许」，日志里出现 `rid=… 决定=allow` ——
+    #    进程已死所以没有实际动作，但"停止之后还能授权"本身就把闸门语义破了。
+    b.send_card = lambda cid, ct, card, wait=True: (
+        cards.append(card) or {"sent": True, "errcode": 0, "errmsg": "",
+                               "token": "cid|ts-stop"})
+    with open(os.path.join(ad, "ridstop.req.json"), "w", encoding="utf-8") as f:
+        json.dump({"id": "ridstop", "tool_name": "Bash", "tool_input": {},
+                   "target": "cid|2|u1"}, f)
+    b._approval_scan_once()
+    nstop = b._cancel_pending_approvals("cid", 2, "测试：/stop")
+    dstop = os.path.join(ad, "ridstop.decision")
+    check("停止时收口 1 条待审批", nstop == 1, str(nstop))
+    check("  已经落盘 deny",
+          os.path.exists(dstop)
+          and open(dstop, encoding="utf-8").read().strip() == "deny")
+    check("  请求文件被删（否则下一轮扫描会弹幽灵卡）",
+          not os.path.exists(os.path.join(ad, "ridstop.req.json")))
+    check("  内存里标成已处理",
+          (b._approvals.get("ridstop") or {}).get("resolved") is True)
+    with open(dstop, "w", encoding="utf-8", newline="\n") as f:
+        f.write("deny\n")
+    b._handle_card_event(ev("approve_ok", tid="ridstop"))
+    check("  停止之后再点「允许」不生效（决定仍是 deny）",
+          open(dstop, encoding="utf-8").read().strip() == "deny",
+          repr(open(dstop, encoding="utf-8").read()))
+
     # 关掉审批时不该注入任何环境变量
     b2 = bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store, FakeRunner(),
                        tmp, 18000, 20, 0)
@@ -817,7 +844,10 @@ def test_busy_drop():
           b._q.queue[0]["response_url"] == "http://stub")
 
     # 忙碌 → 丢弃 + 忙碌提示
-    b._current = {"started": 0, "text": "长任务", "userid": "u1", "chatid": "cid"}
+    # 「忙碌」现在是**按会话**记的（2026-11-05 起不同会话可并行）
+    b._current[("cid", 2)] = {"started": 0, "text": "长任务",
+                              "userid": "u1", "chatid": "cid"}
+    b._runners[("cid", 2)] = b.runner      # 真实流程里入队那一刻就挂上了
     before = b._q.qsize()
     b._handle_callback(msg("你好", "m-busy"))
     check("忙碌时**没有**入队", b._q.qsize() == before, f"q={b._q.qsize()}")
@@ -852,6 +882,65 @@ def test_busy_drop():
     # 忙碌时 /stop 仍可用（且确实转到 runner）
     b._handle_callback(msg("/stop", "m-stop"))
     check("忙碌时 /stop 仍可用", "停止" in captured[-1], captured[-1][:20])
+
+
+def test_parallel_sessions():
+    """同一会话串行、不同会话并行（2026-11-05 用户拍板）。
+
+    旧行为是**全局一把**：群聊在跑时，私聊发什么都回"忙碌中"。
+    这两条判据必须同时成立，只看"能并行"会漏掉"同一会话仍要丢弃"。
+    """
+    print("\n== 并发粒度：同一会话串行、不同会话并行 ==")
+    tmp = tempfile.mkdtemp(prefix="ccbridge-par-")
+    store = bridge.Store(os.path.join(tmp, "p.db"))
+
+    class FakeRunner:
+        perm_mode = "bypassPermissions"
+        timeout = 600
+
+        def clone(self):
+            return FakeRunner()
+
+        def kill_current(self):
+            return True
+
+        def clear_stop(self):
+            pass
+
+    b = bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store, FakeRunner(),
+                      tmp, 18000, 20, 0)
+    replies = []
+    b.reply = lambda url, content: replies.append(content) or True
+    b.send_markdown = lambda *a, **k: True
+
+    def msg(text, mid, chatid="cid", chattype="group"):
+        return {"cmd": "aibot_msg_callback", "headers": {"req_id": "RID-" + mid},
+                "body": {"aibotid": BOT_ID, "chatid": chatid, "chattype": chattype,
+                         "from": {"userid": "u1"}, "msgid": mid, "msgtype": "text",
+                         "response_url": "http://stub",
+                         "text": {"content": "@CC " + text}}}
+
+    b._handle_callback(msg("任务一", "m1"))
+    check("群聊正常入队", b._q.qsize() == 1 and ("cid", 2) in b._current)
+
+    b._handle_callback(msg("同一会话再来一条", "m2"))
+    check("同一会话再发 ⇒ 丢弃，不入队",
+          b._q.qsize() == 1 and "忙碌中" in replies[-1], replies[-1][:24])
+
+    b._handle_callback(msg("另一个群", "m3", chatid="cid2"))
+    check("不同会话 ⇒ 正常入队（修前这里也回“忙碌中”）",
+          b._q.qsize() == 2 and ("cid2", 2) in b._current, f"q={b._q.qsize()}")
+
+    # 全局上限（默认 2）⇒ 第三个会话要挡下，且**说清楚是不同的原因**
+    b._handle_callback(msg("第三个群", "m4", chatid="cid3"))
+    check("超过全局上限 ⇒ 挡下", b._q.qsize() == 2)
+    check("文案区分「全局已满」与「本会话忙」",
+          "上限" in replies[-1], replies[-1][:30])
+
+    # /stop 只停本会话
+    b._handle_callback(msg("/stop", "m5"))
+    check("/stop 只停本会话，别的会话不受影响",
+          ("cid2", 2) in b._current and "停止" in replies[-1], replies[-1][:20])
 
 
 def test_single_chat():
@@ -1018,6 +1107,9 @@ def test_robustness():
 
     # 7) 空消息这类**提前 return** 的路径，不能把"忙碌"占位留在那儿
     b7 = mk()
+    # 占位现在是**入队时**就占的，这里手工模拟那一刻
+    b7._current[("cid", 2)] = {"started": 0, "text": "   ",
+                               "userid": "u1", "chatid": "cid"}
     b7._q.put({"chatid": "cid", "chat_type": 2, "userid": "u1",
                "text": "   ", "msgid": "m-blank"})
     th = threading.Thread(target=b7._worker, daemon=True)
@@ -1025,7 +1117,8 @@ def test_robustness():
     time.sleep(0.4)
     b7.stop = True
     th.join(timeout=2)
-    check("提前返回后不残留「忙碌中」", b7._current is None, repr(b7._current))
+    check("提前返回后不残留「忙碌中」", ("cid", 2) not in b7._current,
+          repr(b7._current))
 
 
 def test_phase4():
@@ -1407,7 +1500,8 @@ def test_card_events():
     check("清上下文时旧 usage 读数一起清掉",
           ("cid", "u1") not in b._last_usage, repr(b._last_usage))
 
-    # 停止
+    # 停止（真实流程里入队那一刻就挂上了本会话的 Runner）
+    b._runners[("cid", 2)] = b.runner
     before = FakeRunner.killed
     b._handle_card_event(ev("status_stop"))
     check("点「停止」转到 runner.kill_current", FakeRunner.killed == before + 1)
@@ -1753,6 +1847,7 @@ def main():
     test_send_strategy()
     test_store()
     test_busy_drop()
+    test_parallel_sessions()
     test_single_chat()
     test_stream_reply()
     test_robustness()

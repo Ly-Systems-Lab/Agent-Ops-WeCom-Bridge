@@ -112,7 +112,7 @@ class WeComOutboundMixin:
         if not chatid:
             log.warning("[send] 无 chatid，跳过推送")
             return {"sent": False, "errcode": None, "errmsg": "no chatid"}
-        self._note_side()
+        self._note_side(chatid, chat_type)
         frame = {
             "cmd": "aibot_send_msg",
             "headers": {"req_id": self._new_req_id()},
@@ -141,7 +141,7 @@ class WeComOutboundMixin:
         if not chatid:
             log.warning("[send] 无 chatid，跳过卡片")
             return {"sent": False, "errcode": None, "errmsg": "no chatid"}
-        self._note_side()
+        self._note_side(chatid, chat_type)
         frame = {
             "cmd": "aibot_send_msg",
             "headers": {"req_id": self._new_req_id()},

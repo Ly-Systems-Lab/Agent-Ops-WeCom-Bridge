@@ -127,9 +127,51 @@ class CoreMixin:
         return session_id, cwd
 
 
-    def _is_busy(self):
+    def _is_busy(self, chatid=None, chat_type=None):
+        """不传参数 = 全局还有没有任务在跑（看门狗/老单测用）；
+        传了会话 = **这个会话**有没有任务在跑（入站判断用）—— 两者语义不同，
+        因为现在是"同一会话串行、不同会话并行"。"""
         with self._job_lock:
-            return self._current is not None
+            if chatid is None:
+                return bool(self._current)
+            return (chatid, chat_type) in self._current
+
+
+    def _job_key(self, chatid, chat_type):
+        return (chatid, chat_type)
+
+
+    def _attach_runner(self, chatid, chat_type):
+        """给这一轮任务配一份独立的 Runner（停任务时只停这一个会话的）。"""
+        # 老的单测 FakeRunner 没有 `clone()`（它是这次并发改造才需要的）；
+        # 它们本来也跑不到真进程，共用一份即可。
+        r = self.runner.clone() if hasattr(self.runner, "clone") else self.runner
+        with self._job_lock:
+            self._runners[(chatid, chat_type)] = r
+        return r
+
+
+    def _kill_job(self, chatid, chat_type):
+        """只停**这个会话**的任务。返回 (killed, status)。"""
+        with self._job_lock:
+            r = self._runners.get((chatid, chat_type))
+        if r is None:
+            return False, "idle"
+        killed = r.kill_current()
+        return killed, getattr(r, "kill_status", "?")
+
+
+    def _kill_all(self):
+        """进程退出时用：把所有在跑的任务都停掉。"""
+        with self._job_lock:
+            rs = list(self._runners.values())
+        killed = False
+        for r in rs:
+            try:
+                killed = r.kill_current() or killed
+            except Exception as e:
+                log.warning("[kill] 终止失败：%s", e)
+        return killed
 
 
     def _epoch_of(self, chatid, userid):
@@ -143,14 +185,15 @@ class CoreMixin:
             self._epoch[k] = self._epoch.get(k, 0) + 1
 
 
-    def _stop_text(self, killed):
+    def _stop_text(self, killed, status=None):
         """按 runner 的**实际**结果给话。`failed` 不能说成"已清理"。
 
         `kill_status` 是 `kill_current()` 复核过 `p.poll()` 之后写的：
         `killed` = 确认退出；`failed` = 命令发了但进程没退；`idle` = 本来就没在跑。
         （老的单测 FakeRunner 只返回 bool、不写 kill_status，这里照样按 killed 处理。）
         """
-        status = getattr(self.runner, "kill_status", "")
+        if status is None:
+            status = getattr(self.runner, "kill_status", "")
         if killed or status == "killed":
             return "⏹ 已停止当前任务（进程树已清理）。"
         if status == "failed":
@@ -169,10 +212,14 @@ class CoreMixin:
             self.plat_reply(response_url, "已开新会话：下一轮不会记得之前的内容。")
             return
         if cmd == "/stop":
-            killed = self.runner.kill_current()
-            log.info("[ctl] /stop 终止=%s 状态=%s", killed,
-                     getattr(self.runner, "kill_status", "?"))
-            self.plat_reply(response_url, self._stop_text(killed))
+            # ⚠️ **先收口待审批，再杀进程。** 反过来的话中间有一个窗口：进程正在死、
+            # 而卡片仍然"有效"，用户点下去会**真的写进一条 allow**
+            # （2026-11-07 实测：/stop 之后 9 秒点「允许」，日志里出现 `决定=allow`）。
+            self._cancel_pending_approvals(chatid, chat_type, "用户 /stop")
+            killed, status = self._kill_job(chatid, chat_type)
+            log.info("[ctl] /stop 终止=%s 状态=%s chat=%s/%s", killed, status,
+                     chatid, chat_type)
+            self.plat_reply(response_url, self._stop_text(killed, status))
             return
         if cmd == "/status":
             # 改成**卡片**：一眼能看，还带三个按钮（刷新 / 清上下文 / 停止）。
@@ -192,11 +239,14 @@ class CoreMixin:
         sid, cwd = self.store.get_session(chatid, userid,
                                           self._cwd_for(chat_type))
         with self._job_lock:
-            cur = dict(self._current) if self._current else None
+            cur = dict(self._current.get((chatid, chat_type)) or {}) or None
+            others = len(self._current)
         usage = (self._last_usage.get((chatid, userid)) or "").replace("📊 ", "").strip()
         return [
             ("队列", f"{self._q.qsize()} 条"),
-            ("当前任务", ("运行中 %.0f 秒" % (time.time() - cur["started"])) if cur else "空闲"),
+            ("当前任务",
+             ("运行中 %.0f 秒" % (time.time() - cur["started"])) if cur
+             else (f"空闲（另有 {others} 个会话在跑）" if others else "空闲")),
             ("上下文", usage or "—（重启后首轮还没跑）"),
             ("会话", (sid or "")[:8] or "（无，下一轮新建）"),
             ("档位", f"{self.runner.perm_mode or '默认'} / 超时 {self.runner.timeout}s"),
@@ -262,6 +312,109 @@ class CoreMixin:
             return False
 
 
+    def _approval_resolve(self, rid):
+        """标成「已处理」，**不是删除**。
+
+        删掉的话，只要 `.req.json` 还在（hook 每 0.2 秒才轮询一次），
+        下一轮扫描就会把同一个 rid 当成新请求、再发一张卡 —— 2026-11-05 实测：
+        用户点掉第一张后 1 秒内又冒出一张同内容的卡，点它提示"已失效"。
+        真正的清理交给"请求文件消失"那条分支。
+        """
+        with self._approval_lock:
+            info = self._approvals.get(rid)
+            if info is not None:
+                info["resolved"] = True
+
+    def _cancel_pending_approvals(self, chatid, chat_type, why="任务已停止"):
+        """把某会话**所有还没处理**的审批请求按拒绝收口；能改卡就把卡也收掉。
+
+        为什么 `/stop` 必须走这一步（2026-11-07 真机实测的漏洞）：
+        停止只杀进程，请求文件与内存记录都还留着 ⇒ 那张卡在用户眼里仍然"有效"，
+        再点「允许」会**真的写进一条 allow 决定**（日志：`rid=… 决定=allow`）。
+        进程已经死了，这一次没有造成实际动作，但**闸门的语义破了**：
+        停止之后不该还能授权。fail-closed 要求"停 = 全部关掉"。
+
+        与 `_deny_and_stop` 的分工：那个是"点了拒绝"这条路径（还要额外处理
+        刚被点掉的那张卡）；这个是"任务结束/被停"这条路径，只收口还没处理的。
+
+        返回收口的条数（测试与日志用）。
+        """
+        if not self.approval_dir:
+            return 0
+        with self._approval_lock:
+            mine = [(rid, dict(v)) for rid, v in self._approvals.items()
+                    if (v.get("chatid"), v.get("chat_type")) == (chatid, chat_type)
+                    and not v.get("resolved")]
+        done = 0
+        for rid, info in mine:
+            # ① hook 那边：写 deny，让它立刻退出（它只认文件）
+            self._approval_decide(rid, False, why)
+            # ② 内存这边：标 resolved，之后任何点击都会走"已处理过"分支
+            self._approval_resolve(rid)
+            # ③ 文件：自己的请求文件留着，下一轮扫描会把它当**新请求**再弹一张幽灵卡
+            for suffix in (".req.json", ".seen"):
+                try:
+                    os.remove(os.path.join(self.approval_dir, rid + suffix))
+                except OSError:
+                    pass
+            # ④ 已经发出去的那张卡：有位置就改掉，别留一个点了没用的按钮
+            token = info.get("card_token") or ""
+            if token:
+                try:
+                    self.plat_approval_update_card(token, info.get("req") or {},
+                                                   False, info.get("userid") or "")
+                except Exception as e:
+                    log.warning("[approval] 收口卡片失败 rid=%s: %s", rid, e)
+            done += 1
+        if done:
+            log.info("[approval] %s ⇒ 同会话 %d 条待审批按拒绝收口", why, done)
+        return done
+
+    def _deny_and_stop(self, chatid, chat_type, why="用户拒绝"):
+        """点「拒绝」= **终止本轮任务**（用户 2026-11-05 拍板）。
+
+        为什么不是"只拒这一次"：拒绝的语义是"这件事到此为止"。不停的话，模型会换个
+        工具再来一次，用户就得对同一件事反复点拒绝 —— 实测就是这样，卡片一张接一张。
+
+        三件事，顺序不能反：
+          ① 把同会话里**还没处理**的请求一起按拒绝落盘（它们的 hook 才肯退出）；
+          ② 删掉**这个会话所有**请求文件（含刚被点掉的那一张）—— 进程树马上会被杀，
+             hook 来不及自己删；留着的话下一轮扫描会把它们当新请求、又在"已拒绝"
+             之后弹卡，而且会让这个会话永久卡在"已有一张卡在等点击"；
+          ③ 停进程放到**旁路线程**：`kill_current` 最多等 5 秒，
+             而卡片回调只有约 3 秒预算（飞书超时会判失败）。
+        """
+        with self._approval_lock:
+            mine = [(r, v) for r, v in self._approvals.items()
+                    if (v.get("chatid"), v.get("chat_type")) == (chatid, chat_type)]
+        pending = [(r, v) for r, v in mine if not v.get("resolved")]
+        for r, _v in pending:
+            self._approval_decide(r, False, why)
+            self._approval_resolve(r)
+        # ⚠️ **文件清理要覆盖整个会话，不只是"还没处理"的那几张。**
+        # 刚被点掉的那张已经是 resolved、不在 `pending` 里，但它的 hook 正是马上要被
+        # 杀掉的那个 —— 进程树一死，hook 就来不及删自己的 `.req.json`。
+        # 留着有两个后果：① 内存里的死记录让这个会话再也弹不出新卡（见 `_approval_show_next`）；
+        # ② 桥重启后这个文件会被当成**新请求**，给一个早就结束的任务弹一张幽灵卡。
+        # 2026-11-05 实测：`130bff3b4f99.req.json` 在拒绝之后一直躺在目录里。
+        for r, _v in mine:
+            for suffix in (".req.json", ".seen"):
+                try:
+                    os.remove(os.path.join(self.approval_dir, r + suffix))
+                except OSError:
+                    pass
+        if pending:
+            log.info("[approval] 拒绝 ⇒ 同会话另外 %d 条待审批一并按拒绝处理",
+                     len(pending))
+        self._stopped_by_deny[(chatid, chat_type)] = True
+        threading.Thread(target=self._stop_for_deny, args=(chatid, chat_type),
+                         daemon=True, name="deny-stop").start()
+
+    def _stop_for_deny(self, chatid, chat_type):
+        killed, status = self._kill_job(chatid, chat_type)
+        log.info("[approval] 拒绝 ⇒ 终止本轮任务 killed=%s 状态=%s chat=%s/%s",
+                 killed, status, chatid, chat_type)
+
     def _approval_scan_once(self):
         """扫一遍待审批请求。**跑在专用线程上**：发卡片会等平台回执（最多 15s）。"""
         try:
@@ -275,6 +428,11 @@ class CoreMixin:
         with self._approval_lock:
             # hook 退出时会删掉请求文件 ⇒ 过期的直接忘掉（免得点击写进一个没人读的文件）
             for rid in [r for r in self._approvals if r not in live]:
+                # ⚠️ **这一行必须打日志**：它就是"卡片还在、点了一下却说已失效"的那个
+                # 静默分支 —— 记录被删掉了，而用户手上的卡片还留着按钮。
+                # 没有这行日志时，事后只能看到"未知或已过期"，不知道为什么。
+                log.warning("[approval] 请求文件已消失 ⇒ 忘掉 rid=%s（之后点这张卡会判为失效）",
+                            rid)
                 self._approvals.pop(rid, None)
             known = set(self._approvals)
         for rid in live - known:
@@ -288,6 +446,14 @@ class CoreMixin:
             target = str(req.get("target") or "").split("|")
             if len(target) < 3 or not target[0]:
                 log.warning("[approval] 请求没带目标会话 rid=%s ⇒ 直接拒绝", rid)
+                # 记一笔（resolved + 不显示）：否则每 0.3 秒都会重新读一遍这个文件、
+                # 重新写一次拒绝，直到 hook 自己删掉 —— 纯噪音。
+                with self._approval_lock:
+                    self._approvals[rid] = {"chatid": "", "chat_type": 2,
+                                            "userid": "", "ts": time.time(),
+                                            "tool": req.get("tool_name"),
+                                            "shown": True, "resolved": True,
+                                            "req": req}
                 self._approval_decide(rid, False, "无目标")
                 continue
             chatid, chat_type, userid = target[0], int(target[1] or 2), target[2]
@@ -295,26 +461,123 @@ class CoreMixin:
                 self._approvals[rid] = {"chatid": chatid, "chat_type": chat_type,
                                         "userid": userid, "ts": time.time(),
                                         "tool": req.get("tool_name"),
+                                        # `shown=False` = 已登记、**还没上屏**（排队中）
+                                        "shown": False,
+                                        # `resolved=True` = 已经点过了。
+                                        # ⚠️ **处理完不能从表里删**：hook 还没醒过来删
+                                        # `.req.json`（0.2 秒轮询），下一轮扫描就会把
+                                        # 同一个 rid 当**新请求**再发一张卡 —— 用户看到
+                                        # 两张一模一样的卡，点第二张提示"已失效"
+                                        # （2026-11-05 实测，日志里同一个 rid 出现两次）。
+                                        "resolved": False,
                                         # 留着整份请求：点击后要把卡片就地改成
                                         # 「已允许/已拒绝」，得知道刚才要干什么
                                         "req": req}
             # ① 先告诉 hook「我看到了」（它只等 10 秒；不然桥没在跑时它会干等两分钟）
+            #    ⚠️ 「我看到了」≠「我把它上屏了」：排队的请求也要立刻回执，
+            #       否则后面的 hook 会在 10 秒后自己拒绝 —— 用户根本还没轮到看它。
             try:
                 open(os.path.join(self.approval_dir, rid + ".seen"), "w").close()
-            except Exception:
-                pass
-            # ② 发卡片。发不出去 = 用户永远点不到 ⇒ 立刻拒绝，别让他白等 120 秒
-            r = self.plat_send_card(chatid, chat_type, self.plat_approval_card(req),
-                               wait=True)
-            if not r.get("sent"):
-                log.warning("[approval] 卡片没发出去（%s）⇒ 直接拒绝 rid=%s",
-                            r.get("errmsg") or r.get("errcode"), rid)
-                self._approval_decide(rid, False, "卡片未送达")
-                with self._approval_lock:
-                    self._approvals.pop(rid, None)
+                log.info("[approval] 已回执 .seen rid=%s（hook 可以继续等了）", rid)
+            except Exception as e:
+                # 写不出 .seen ⇒ hook 会在 10 秒后**自己拒绝**，用户还没看到卡片就没了。
+                # 这是必须出声的一条：它是"卡片弹出来了但一点就失效"的上游原因之一。
+                log.error("[approval] 写不出 .seen rid=%s：%s —— hook 会在超时后自行拒绝",
+                          rid, e)
+
+        # ② **每个会话同时只上一张卡**：一次并发好几个工具调用时，
+        #    卡片一张张弹会把聊天窗刷满，用户也读不过来（2026-11-05 用户明确要求）。
+        #    排队顺序按请求到达时间，前一张处理完（点击/过期/卡片发失败）才发下一张。
+        self._approval_show_next()
+
+    def _approval_show_next(self):
+        """把队首那张还没上屏的审批卡发出去（每个会话最多一张在等点击）。
+
+        ⚠️ 排队期间**每个请求自己的超时照旧在走**（hook 从它被创建那一刻算），
+        所以队太长、人离开太久时，后面几张会在轮到之前就过期 —— 那是 fail-closed
+        该有的行为，不是 bug。日志里会看到 `.req.json` 先消失、卡片根本没发。
+        """
+        with self._approval_lock:
+            # ⚠️ **必须排除 `resolved`**。点掉的那张记录不会立刻删（见 `_approval_resolve`），
+            # 如果它还算作"在等点击"，这个会话就会被**永久**判定为有一张卡没处理完 ——
+            # 之后所有新卡只排队、永不上屏，hook 干等满 120 秒自己拒绝。
+            # 2026-11-05 实测：群里点过一次「拒绝」之后，那个群再也不弹审批卡，
+            # 日志里只有 `.seen` 回执、没有"审批卡已送达"，最后 `denials=2`。
+            showing = {(v.get("chatid"), v.get("chat_type"))
+                       for v in self._approvals.values()
+                       if v.get("shown") and not v.get("resolved")}
+            pending = sorted(((rid, v) for rid, v in self._approvals.items()
+                              if not v.get("shown") and not v.get("resolved")),
+                             key=lambda kv: kv[1].get("ts") or 0)
+        pick = None
+        for rid, info in pending:
+            if (info.get("chatid"), info.get("chat_type")) in showing:
+                continue        # 这个会话已经有一张在等点击了
+            pick = (rid, info)
+            break
+        if pick is None:
+            return
+        rid, info = pick
+        req = info.get("req") or {}
+        with self._approval_lock:
+            info["shown"] = True
+
+        r = self.plat_send_card(info["chatid"], info["chat_type"],
+                                self.plat_approval_card(req), wait=True)
+        # 记下这张卡的位置（平台给了才记）。`/stop` 时要用它把卡收口，
+        # 否则会留下一张"看起来还能点"的按钮 —— 见 `_cancel_pending_approvals`。
+        if r.get("token"):
+            with self._approval_lock:
+                info["card_token"] = r["token"]
+        mine = (info.get("chatid"), info.get("chat_type"))
+        left = max(0, sum(1 for _, v in pending
+                          if (v.get("chatid"), v.get("chat_type")) == mine) - 1)
+        log.info("[approval] 审批卡 rid=%s tool=%s → %s/%s：%s%s",
+                 rid, req.get("tool_name"), info["chatid"], info["chat_type"],
+                 "已送达（等点击）" if r.get("sent")
+                 else f"未送达 code={r.get('errcode')} {r.get('errmsg')}",
+                 f"；同会话还有 {left} 张排队" if left > 0 else "")
+        if not r.get("sent"):
+            log.warning("[approval] 卡片没发出去（%s）⇒ 直接拒绝 rid=%s",
+                        r.get("errmsg") or r.get("errcode"), rid)
+            self._approval_decide(rid, False, "卡片未送达")
+            self._approval_resolve(rid)
+
+
+    def _approval_sweep(self):
+        """启动时清空审批目录。
+
+        为什么安全：hook 最长只等 `CC_APPROVAL_WAIT_SEC`（默认 120 秒），
+        而**本进程**刚起来，不可能有任何 hook 在等"这个进程"的答复 ——
+        目录里剩下的必然是上一次运行留下的死请求（典型来源：点了「拒绝」之后
+        进程树被强杀，hook 没来得及删自己的 `.req.json`）。
+
+        不清的话，重启后那一张会被当成**新请求**发进聊天 —— 用户会对着一张
+        早就结束的任务的审批卡点下去。
+        """
+        if not self.approval_dir:
+            return
+        try:
+            names = os.listdir(self.approval_dir)
+        except FileNotFoundError:
+            return
+        except Exception as e:
+            log.warning("[approval] 启动清理：列目录失败 %s", e)
+            return
+        removed = 0
+        for n in names:
+            if n.endswith((".req.json", ".req.json.tmp", ".seen", ".decision")):
+                try:
+                    os.remove(os.path.join(self.approval_dir, n))
+                    removed += 1
+                except OSError:
+                    pass
+        if removed:
+            log.info("[approval] 启动清理：删掉上次运行残留的 %d 个文件", removed)
 
 
     def _approval_loop(self):
+        self._approval_sweep()
         while not self.stop:
             try:
                 self._approval_scan_once()
@@ -323,15 +586,22 @@ class CoreMixin:
             time.sleep(APPROVAL_POLL_SEC)
 
 
-    def _note_side(self):
-        """记一条"气泡之外的消息"（markdown / 卡片 / response_url 回执）。"""
+    def _note_side(self, chatid=None, chat_type=None):
+        """记一条"气泡之外的消息"（markdown / 卡片 / response_url 回执）。
+
+        `chatid` 能拿到就按会话记；`reply()` 那条路只有 token、不知道会话，
+        记进 `None` 那一格（对所有会话生效）—— 控制类回执很少，
+        最坏后果只是答案多分一条发，不会丢内容。
+        """
+        key = (chatid, chat_type) if chatid else None
         with self._side_lock:
-            self._side_msgs += 1
+            self._side_msgs[key] = self._side_msgs.get(key, 0) + 1
 
 
-    def _side_count(self):
+    def _side_count(self, chatid=None, chat_type=None):
+        key = (chatid, chat_type) if chatid else None
         with self._side_lock:
-            return self._side_msgs
+            return self._side_msgs.get(key, 0) + self._side_msgs.get(None, 0)
 
 
     def _finish(self, st, chatid, chat_type, text, since=None):
@@ -346,8 +616,8 @@ class CoreMixin:
         """
         if st is None:
             return self.plat_send_chunks(chatid, chat_type, text)
-        if since is not None and self._side_count() != since:
-            n = self._side_count() - since
+        if since is not None and self._side_count(chatid, chat_type) != since:
+            n = self._side_count(chatid, chat_type) - since
             log.info("[deliver] 本轮中途发过 %d 条旁路消息 ⇒ 气泡收口，答案另发一条", n)
             r = st.send("✅ 已完成，回答见下 ↓", finish=True)
             if not r.get("sent"):
@@ -361,39 +631,59 @@ class CoreMixin:
 
 
     def _worker(self):
+        """**派发器**（不是执行者）：拿到一个任务就另起一个线程去跑。
+
+        为什么这样拆（2026-11-05 用户拍板：同一会话串行、不同会话并行）：
+        「同一会话同时只能有一个」这条约束在**入队那一刻**就已经保证了
+        （见 `core_handle_incoming` 里的按会话占位），所以这里不需要再串行 ——
+        串行会让一个会话把别的会话堵住，正是要修掉的那个现象。
+        """
         while not self.stop:
             try:
                 job = self._q.get(timeout=1)
             except queue.Empty:
                 continue
-            # 一出队就占住"忙碌"位：`_do_job` 要读库、查目录之后才设 `_current`，
-            # 那个空档里新消息会被当成"空闲"收进队列，破坏"忙碌即丢弃"的约定。
-            with self._job_lock:
-                if self._current is None:
-                    self._current = {"started": time.time(),
-                                     "text": (job.get("text") or "")[:60],
-                                     "userid": job.get("userid"),
-                                     "chatid": job.get("chatid")}
+            t = threading.Thread(
+                target=self._run_job_slot, args=(job,), daemon=True,
+                name="job-%s" % (str(job.get("chatid"))[-6:] or "?"))
+            t.start()
+
+
+    def _run_job_slot(self, job):
+        """一个任务的完整生命周期（跑在**自己的线程**里，会话之间互不阻塞）。"""
+        key = (job["chatid"], job["chat_type"])
+        try:
+            self._do_job(job)
+        except Exception as e:
+            log.exception("[worker] 任务异常: %s", e)
+            # ⚠️ **这一句自己也必须兜住。** 它走的还是"刚刚出错的那条发送链路" ——
+            # 2026-11-07 实测：断网时 chat.update 抛错 → 这里再抛 → 异常逃出 except
+            # ⇒ 整个 `job-*` 线程当场死掉，用户既没收到答案、也没收到"没发出去"。
+            # 「报错的动作」不许再把线程带走：发不出去就只记日志。
             try:
-                self._do_job(job)
-            except Exception as e:
-                log.exception("[worker] 任务异常: %s", e)
                 self.plat_send_text(job["chatid"], job["chat_type"],
                                    f"❌ 桥内部错误：{type(e).__name__}: {e}")
-            finally:
-                self._q.task_done()
-                # 占位必须在这里收：`_do_job` 有几条**提前 return**（空消息、目录不存在），
-                # 那些路径不会走到它内部的清理，占位留着就会永久显示"忙碌中"。
-                with self._job_lock:
-                    self._current = None
+            except Exception as e2:
+                log.error("[worker] 连报错都发不出去：%s: %s",
+                          type(e2).__name__, e2)
+        finally:
+            self._q.task_done()
+            # 占位必须在这里收：`_do_job` 有几条**提前 return**（空消息、目录不存在），
+            # 那些路径不会走到它内部的清理，占位留着就会永久显示"忙碌中"。
+            with self._job_lock:
+                self._current.pop(key, None)
+                self._runners.pop(key, None)
 
 
     def _do_job(self, job):
         chatid, chat_type, userid, text = (job["chatid"], job["chat_type"],
                                            job["userid"], job["text"])
+        # 每轮开头清掉**本会话**"被拒绝终止"的标记：它只在**本轮**有意义，
+        # 留着会把下一轮的 `/stop` 也报成"已拒绝"。
+        self._stopped_by_deny.pop((chatid, chat_type), None)
         # 本轮开始时的旁路消息计数：跑到一半若发过审批卡/状态卡，答案要另发一条
         # 才能落在最底部（见 `_finish`）。
-        job["_side0"] = self._side_count()
+        job["_side0"] = self._side_count(chatid, chat_type)
 
         # 这一条**流式气泡**装下 ack 与正文（同一个 stream.id，正文覆盖 ack）。
         # 回调没带 req_id 时退回老路径（response_url 回执 + 主动推送），别把消息吞掉。
@@ -417,9 +707,15 @@ class CoreMixin:
             return
 
         with self._job_lock:
-            self._current = {"started": time.time(), "text": text[:60],
-                             "userid": userid, "chatid": chatid}
-        self.runner.clear_stop()
+            self._current[(chatid, chat_type)] = {
+                "started": time.time(), "text": text[:60],
+                "userid": userid, "chatid": chatid}
+        # 这一轮用**自己那份** Runner（入队时已经挂上）：`kill_current()` 只停本会话的进程。
+        with self._job_lock:
+            runner = self._runners.get((chatid, chat_type))
+        if runner is None:      # 直接调 `_do_job` 的路径（老单测）兜底
+            runner = self._attach_runner(chatid, chat_type)
+        runner.clear_stop()
 
         # ack：流式首帧（`finish=false`），正文到点时用**同一个 id** 覆盖它。
         # ⚠️ 必须**在 worker 线程**发（要等回执），不能放在回调的读线程上。
@@ -467,7 +763,7 @@ class CoreMixin:
             kw = {"on_progress": cb}
             if aenv:
                 kw["extra_env"] = aenv
-            res = self.runner.run(text, session_id, cwd, **kw)
+            res = runner.run(text, session_id, cwd, **kw)
             note = ""
             # resume 失效（会话文件被清理/损坏）⇒ 新建并在回复里说明，不静默失忆。
             #
@@ -482,7 +778,7 @@ class CoreMixin:
                 retry_ok, why = safe_to_retry_resume(res)
                 if retry_ok:
                     log.warning("[run] resume 失败，改新建会话重跑")
-                    res = self.runner.run(text, None, cwd, **kw)
+                    res = runner.run(text, None, cwd, **kw)
                     note = "> ⚠️ 上一轮的会话已失效，已为你新建会话（所以这轮不记得之前的内容）。\n\n"
                 else:
                     # 不能重跑：宁可让用户核实，也不冒重复副作用的风险
@@ -498,8 +794,13 @@ class CoreMixin:
         except Exception as e:
             # 这里兜住：否则 _worker 那个兜底会**另发一条**，用户就又是两个气泡了
             log.exception("[job] 任务异常: %s", e)
-            self._finish(st, chatid, chat_type,
-                         f"❌ 桥内部错误：{type(e).__name__}: {e}")
+            # 同 `_run_job_slot` 那条：**报错回执自己失败，只能记日志**。
+            try:
+                self._finish(st, chatid, chat_type,
+                             f"❌ 桥内部错误：{type(e).__name__}: {e}")
+            except Exception as e2:
+                log.error("[job] 报错回执也没发出去：%s: %s",
+                          type(e2).__name__, e2)
         finally:
             if pump:
                 # 异常路径也必须收口，否则它会在 `_worker` 那条兜底推送之后继续发帧
@@ -509,7 +810,8 @@ class CoreMixin:
             if latch:
                 latch.cancel()
             with self._job_lock:
-                self._current = None
+                self._current.pop((chatid, chat_type), None)
+                self._runners.pop((chatid, chat_type), None)
 
 
     def _report(self, job, res, cwd, session_id, note="", st=None):
@@ -525,7 +827,15 @@ class CoreMixin:
                    f"> 重试前请先核实实际状态，别直接重发。\n"
                    f"> 想改超时：`.env` 里的 `CC_TIMEOUT_SEC`。")
         elif res["stopped"]:
-            msg = "⏹ 已按 `/stop` 停止（进程树已清理）。"
+            # ⚠️ 按**会话**读：别的窗口拒绝了一件不相干的事，不能把这个窗口的
+            # `/stop` 也说成"已拒绝"（两个会话现在可以同时跑）。
+            if self._stopped_by_deny.pop((chatid, chat_type), False):
+                # 被「拒绝」终止：话要说得像"你拒绝了这件事"，不是"有人按了 /stop"
+                msg = ("🚫 **已拒绝，本轮任务已停止。**\n"
+                       "> 这次调用没有执行，后面的步骤也不会再问。"
+                       "要它做别的事，请重新发一条指令。")
+            else:
+                msg = "⏹ 已按 `/stop` 停止（进程树已清理）。"
         elif res["is_error"]:
             msg = (f"❌ **执行出错**（subtype=`{res['subtype']}`，rc={res['rc']}）\n\n"
                    f"```\n{(res['text'] or '（无输出）')[:3000]}\n```")
@@ -601,20 +911,45 @@ class CoreMixin:
             self._handle_control(lowered, chatid, chat_type, userid, response_url)
             return
 
-        # —— 普通任务：忙碌时**直接丢弃，不排队** ——
-        # 用户 2026-10-27 明确要求：处理中收到的新消息回"忙碌中…"并抛弃，
-        # 目的是防短时间输入轰炸。
-        # ⚠️ 这**推翻了交接文档 §附录C** 的"聊天桥应该排队"——按用户决定执行。
-        if self._is_busy() or self._q.qsize() > 0:
-            with self._job_lock:
-                cur = dict(self._current) if self._current else None
-            waited = (time.time() - cur["started"]) if cur else 0.0
-            log.warning("[msg] 忙碌中，丢弃 user=%s 正文=%.40r（已跑 %.0fs）",
-                        userid, text, waited)
-            self.plat_reply(response_url,
-                            f"⏳ **忙碌中**（当前任务已跑 {waited:.0f} 秒），**本条已忽略**。\n\n"
-                            f"> 要打断请发 `/stop`；查看进度发 `/status`；"
-                            f"换新话题请等当前任务结束。")
+        # —— 普通任务：**本会话**忙就丢弃，别的会话在跑不影响 ——
+        # 用户 2026-10-27：同一会话处理中收到的新消息回"忙碌中…"并抛弃（防输入轰炸）；
+        # 用户 2026-11-05：不同会话之间要能**并行**（群聊在跑时私聊照样能用）。
+        # ⚠️ 占位必须在**入队这一刻**做，不能等 worker 拿到 —— 中间那段空档里
+        # 同一会话再来一条，会被误判成"空闲"而收进去，破坏"忙碌即丢弃"。
+        slot_key = (chatid, chat_type)
+        with self._job_lock:
+            cur = dict(self._current.get(slot_key) or {}) or None
+            running = len(self._current)
+            if cur is None and running < self.max_concurrent:
+                self._current[slot_key] = {"started": time.time(),
+                                           "text": text[:60],
+                                           "userid": userid, "chatid": chatid}
+                slot = True
+            else:
+                slot = False
+        if slot:
+            # 占位的同时就把这一轮的 Runner 挂上：从这一刻起 `/stop` 就能停到它。
+            # 否则从"入队"到"`_do_job` 走到中途"之间有个空档，那时 `/stop`
+            # 会答"当前没有正在跑的任务"，而任务随后照样跑起来。
+            self._attach_runner(chatid, chat_type)
+        if not slot:
+            if cur is not None:
+                waited = time.time() - cur["started"]
+                log.warning("[msg] 本会话忙碌中，丢弃 user=%s 正文=%.40r（已跑 %.0fs）",
+                            userid, text, waited)
+                self.plat_reply(response_url,
+                                f"⏳ **忙碌中**（本会话当前任务已跑 {waited:.0f} 秒），"
+                                f"**本条已忽略**。\n\n"
+                                f"> 要打断请发 `/stop`；查看进度发 `/status`；"
+                                f"换新话题请等当前任务结束。")
+            else:
+                log.warning("[msg] 全局已满（%d/%d），丢弃 user=%s 正文=%.40r",
+                            running, self.max_concurrent, userid, text)
+                self.plat_reply(response_url,
+                                f"⏳ **忙碌中**（已有 {running} 个会话在跑，"
+                                f"上限 {self.max_concurrent} 个），**本条已忽略**。\n\n"
+                                f"> 等另一个窗口的任务结束后再发；"
+                                f"要打断**这个窗口**请发 `/stop`（只停本会话）。")
             return
 
         # ⚠️ `req_id` 是**平台**给这次回调发的关联键，回复时必须原样透传
@@ -629,6 +964,10 @@ class CoreMixin:
             self._q.put_nowait(job)
         except queue.Full:      # 理论上到不了这里（上面已拦掉忙碌），留个兜底
             log.warning("[q] 入队失败（队列满 %d）", self._qmax)
+            # ⚠️ 占位已经占上了，入队失败必须**还回去**，否则这个会话永久"忙碌中"。
+            with self._job_lock:
+                self._current.pop(slot_key, None)
+                self._runners.pop(slot_key, None)
             self.plat_reply(response_url, "⏳ 忙碌中，本条已忽略。")
             return
         # 「收到，处理中…」**不在这里发**：它要在 worker 线程里以**流式首帧**发出，
@@ -669,10 +1008,11 @@ class CoreMixin:
                                 "✅ 已开新会话：下一轮不会记得之前的内容。")
             return
         if key == "status_stop":
-            killed = self.runner.kill_current()
-            log.info("[card] status_stop 终止=%s 状态=%s", killed,
-                     getattr(self.runner, "kill_status", "?"))
-            self.plat_send_text(chatid, chat_type, self._stop_text(killed))
+            self._cancel_pending_approvals(chatid, chat_type, "点了「停止」")
+            killed, status = self._kill_job(chatid, chat_type)
+            log.info("[card] status_stop 终止=%s 状态=%s chat=%s/%s", killed,
+                     status, chatid, chat_type)
+            self.plat_send_text(chatid, chat_type, self._stop_text(killed, status))
             return
         if key == "approve_done":
             # 更新后的卡片若带着这个"已处理"按钮（降级形态），点了什么都别做
@@ -690,6 +1030,11 @@ class CoreMixin:
                 self.plat_send_text(chatid, chat_type,
                                     "⌛ 这张审批已失效（超时或任务已结束），这次点击没有生效。")
                 return
+            if info.get("resolved"):
+                # 已经点过（卡片也已就地改成"已允许/已拒绝"，按钮早没了）。
+                # 连点两下时第二下会走到这里 —— 静默忽略，别弹第二条"已失效"。
+                log.info("[card] 审批 task_id=%r 已处理过，忽略重复点击", rid)
+                return
             if info.get("userid") and userid != info["userid"]:
                 # 卡片是发给"发起这条任务的人"的，别人点不算数
                 log.warning("[card] 审批被非发起人点击（%s != %s），忽略",
@@ -704,8 +1049,11 @@ class CoreMixin:
                 self.plat_send_text(chatid, chat_type,
                                     "✅ 已允许，继续执行。" if allow
                                     else "🚫 已拒绝，这条不会执行。")
-            with self._approval_lock:
-                self._approvals.pop(rid, None)
+            self._approval_resolve(rid)
+            if not allow:
+                # 拒绝 = 终止本轮（见 `_deny_and_stop`）。放在**改卡之后**：
+                # 卡片先变成「已拒绝」，用户立刻看到反馈，然后才去停进程。
+                self._deny_and_stop(chatid, chat_type)
             return
         log.info("[card] 未知 event_key=%r，忽略", key)
 

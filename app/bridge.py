@@ -38,6 +38,8 @@ import sys
 import tempfile
 import threading
 import time
+
+import requests
 import uuid
 from datetime import datetime, timedelta
 
@@ -53,8 +55,8 @@ from common import (  # noqa: F401  （常量与配置）
     LOGDIR, LOG_KEEP_DAYS, MUTEX_NAME, PROGRESS_HEARTBEAT_SEC,
     PROGRESS_RAW_CAP, ROOT, SEEN_KEEP_DAYS, SEND_WAIT_SEC, STALE_RX_SEC,
     STREAM_LATCH_SEC, STREAM_LIMIT, STREAM_MAX_SEC, TASK_NAME, WATCHDOG_SEC,
-    WS_URL, cfg, cfg_bool, cfg_int, load_env, log, parse_labels, parse_list,
-    whitelist_gate,
+    WS_URL, cfg, cfg_bool, cfg_int, default_approval_dir, load_env, log,
+    parse_labels, parse_list, whitelist_gate,
 )
 from host import (  # noqa: F401  （宿主基建）
     DailyFileHandler, _autostart_xml, _schtasks, _xml_escape,
@@ -76,7 +78,7 @@ from core.text import (  # noqa: F401
 
 # ---------------- 分层装配（抽层第 3 刀）----------------
 # 内核只通过 core/contract.py 的 plat_* 与平台交互；平台只通过 core_handle_*
-# 把规范化事件交回内核。两者共用同一个实例（见 notes/PLATFORM-ADAPTER-EVAL.md 方案 A）。
+# 把规范化事件交回内核。两者共用同一个实例。
 from core.bridge_core import CoreMixin, ProgressPump  # noqa: F401
 from platforms.wecom.adapter import WeComPlatformMixin
 from platforms.wecom.codec import (  # noqa: F401
@@ -88,21 +90,40 @@ from platforms.wecom.outbound import (  # noqa: F401
 from platforms.wecom.render import WeComRenderMixin  # noqa: F401
 from platforms.wecom.transport import WeComTransportMixin
 
+# 飞书（`PLATFORM=feishu` 时装配这一套）。两套适配器**互不 import**，
+# 装配只在下面两个桥类里发生。
+from platforms.feishu.adapter import FeishuPlatformMixin
+from platforms.feishu.codec import FeishuCodecMixin
+from platforms.feishu.outbound import FeishuOutboundMixin
+from platforms.feishu.render import FeishuRenderMixin
+from platforms.feishu.transport import FeishuTransportMixin
+
+# Slack（`PLATFORM=slack` 时装配这一套）。三套适配器**互不 import**，
+# 装配只在下面几个桥类里发生。
+from platforms.slack.adapter import SlackPlatformMixin
+from platforms.slack.codec import SlackCodecMixin
+from platforms.slack.outbound import SlackOutboundMixin
+from platforms.slack.render import SlackRenderMixin
+from platforms.slack.transport import SlackTransportMixin
+
 
 # ---------------- 桥本体：组装 ----------------
-# ⚠️ **入口与行为不变**：`python app\bridge.py` 照旧；构造签名照旧；
-# 测试与 tools/probe_hooks.py 直接摸的内部属性（ws / joined 的 _q / _receipt…）
-# 全部仍挂在这同一个实例上。
-class Bridge(CoreMixin, WeComPlatformMixin, WeComCodecMixin,
-             WeComTransportMixin, WeComOutboundMixin, WeComRenderMixin):
+# ⚠️ **入口与行为不变**：`python app\bridge.py` 照旧；企微桥的构造签名照旧；
+# 测试与 tools/probe_hooks.py 直接摸的内部属性（ws / _q / _receipt…）
+# 全部仍挂在同一个实例上。
+class _BridgeCommon(CoreMixin):
+    """两个平台共用的状态。**平台无关**，所以抽在这里而不是各抄一份。
 
-    def __init__(self, bot_id, secret, allow_users, allow_chats, bot_name,
-                 store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
-                 dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
-                 approval_dir=None, approval_wait_sec=120, approval_allow="",
-                 user_labels="", cc_cwd_dm="", approval_dm=True):
-        self.bot_id = bot_id
-        self.secret = secret
+    判据很简单：这些东西内核会直接用（`_worker` / `_approval_loop` / `_finish`…），
+    与"用哪个聊天平台"无关。抄成两份的唯一后果是将来改一处忘一处。
+    """
+
+    def _init_common(self, allow_users, allow_chats, bot_name,
+                     store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
+                     dump_raw=False, stale_rx_sec=0,
+                     progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
+                     approval_dir=None, approval_wait_sec=120, approval_allow="",
+                     user_labels="", cc_cwd_dm="", approval_dm=True):
         self.allow_users = parse_list(allow_users)
         self.allow_chats = parse_list(allow_chats)
         self.bot_name = bot_name
@@ -124,29 +145,40 @@ class Bridge(CoreMixin, WeComPlatformMixin, WeComCodecMixin,
         self.approval_dir = approval_dir or ""
         self.approval_wait_sec = float(approval_wait_sec or 0)
         self.approval_allow = approval_allow or ""
-        # 卡片上给人看的名字（`WECOM_USER_LABELS`）：userid 是账号 ID，不是昵称。
+        # 卡片上给人看的名字（`WECOM_USER_LABELS` / `FEISHU_USER_LABELS`）。
         self.user_labels = parse_labels(user_labels)
         self._approvals = {}       # id -> {chatid, chat_type, userid, ts, tool}
         self._approval_lock = threading.Lock()
         # 「旁路消息」计数：本轮任务**除了流式气泡之外**又发出去的消息条数。
         # 气泡的位置由**创建时间**锁定，后面只改内容 ⇒ 中途发过卡（审批/状态）时，
         # 答案若写进气泡就会停在那几张卡**上方**。`_finish` 用它决定要不要另发一条。
-        self._side_msgs = 0
+        # ⚠️ **按会话记**（2026-11-05 起会话可并行）：别的窗口发了一张审批卡，
+# 不能让这个窗口以为自己中途发过东西、把答案另发一条。
+        # 键 = (chatid, chat_type)；`None` 那一格给"只知道 token、不知道会话"的被动回复用。
+        self._side_msgs = {}
         self._side_lock = threading.Lock()
+        # 「这一轮是被『拒绝』终止的」——收尾时要把话说得和 `/stop` 不一样，
+        # 否则用户点了拒绝，看到的却是"已按 /stop 停止"，会以为是别的东西停了。
+        # ⚠️ 按**会话**记（2026-11-05 起不同会话可并行）：键 = (chatid, chat_type)。
+        self._stopped_by_deny = {}
         self.dump_raw = dump_raw
         self.stale_rx_sec = int(stale_rx_sec or 0)   # 0 = 关闭惰性连接检测（先量再开）
 
-        self.ws = None
-        self.subscribed = threading.Event()
         self.stop = False
-        self._send_lock = threading.Lock()
         self._backoff = BACKOFF_START
-        self._shape_logged = False
 
         self._q = queue.Queue(maxsize=queue_max)
         self._qmax = queue_max
         self._job_lock = threading.Lock()
-        self._current = None       # {started, text, userid, chatid}
+        # 「正在跑的任务」是**按会话**记的（2026-11-05 用户拍板：同一会话串行、
+        # 不同会话并行）。键 = (chatid, chat_type)。
+        # ⚠️ 入队那一刻就占位，不是等 worker 拿到才占 —— 中间那个空档里如果
+        # 同一会话再来一条，会被误判成"空闲"。
+        self._current = {}         # (chatid, chat_type) -> {started, text, userid, chatid}
+        self._runners = {}         # (chatid, chat_type) -> Runner（停任务要按会话停）
+        # 同时最多几个任务。两个窗口（群聊/私聊）够用，再多人也读不过来；
+        # 每个任务是一个 claude 进程（约 250MB），别让它无限长。
+        self.max_concurrent = max(1, int(os.environ.get("CC_MAX_CONCURRENT") or 2))
 
         # 会话"代次"：`/new` / 卡片「清空」时 +1。
         # 为什么需要（2026-10-29 外部复核 #5）：`/new` 清完库，**正在跑**的旧任务
@@ -160,6 +192,32 @@ class Bridge(CoreMixin, WeComPlatformMixin, WeComCodecMixin,
         # 重启后为空 ⇒ 卡片上就显示"—"，不编造。
         self._last_usage = {}      # (chatid, userid) -> "📊 上下文 …"
 
+        self._threads = {}          # name -> Thread，看门狗据此判断谁死了
+
+
+class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
+                  WeComTransportMixin, WeComOutboundMixin, WeComRenderMixin):
+
+    def __init__(self, bot_id, secret, allow_users, allow_chats, bot_name,
+                 store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
+                 dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
+                 approval_dir=None, approval_wait_sec=120, approval_allow="",
+                 user_labels="", cc_cwd_dm="", approval_dm=True):
+        self.bot_id = bot_id
+        self.secret = secret
+        self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
+                          chunk_bytes, queue_max, progress_sec,
+                          dump_raw=dump_raw, stale_rx_sec=stale_rx_sec,
+                          progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
+                          approval_wait_sec=approval_wait_sec,
+                          approval_allow=approval_allow, user_labels=user_labels,
+                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+
+        self.ws = None
+        self.subscribed = threading.Event()
+        self._send_lock = threading.Lock()
+        self._shape_logged = False
+
         # 推送回执等待：`_send` 返回 True 只说明 WS 帧发出去了，
         # 平台是**异步**用 errcode 回执拒收的（实测 40058 content exceed max length）。
         self._receipt_lock = threading.Lock()   # 同一时刻只让一个发送方在等
@@ -170,12 +228,115 @@ class Bridge(CoreMixin, WeComPlatformMixin, WeComCodecMixin,
 
         # Phase 4：看门狗用。`_last_rx` 是最后一次收到**任何**帧的时刻。
         self._last_rx = time.time()
-        self._threads = {}          # name -> Thread，看门狗据此判断谁死了
 
         # 被动回复走独立队列 + 独立线程（不能卡住 websocket 读线程，见 reply()）
         self._reply_q = queue.Queue(maxsize=32)
 
-    # -- 底层 --
+
+class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
+                   FeishuTransportMixin, FeishuOutboundMixin, FeishuRenderMixin):
+    """飞书桥。与 `WeComBridge` 同一个内核，只换平台层。
+
+    ⚠️ 两处与企微**本质不同**、都在各自的文件里写了原因：
+      · 事件在 asyncio 循环线程上**同步派发** ⇒ 消息入口只入队（codec）；
+      · 卡片回调必须**同步返回**新卡片 ⇒ 就地改卡走回调上下文（outbound/codec）。
+    """
+
+    def __init__(self, app_id, app_secret, allow_users, allow_chats, bot_name,
+                 store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
+                 dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
+                 approval_dir=None, approval_wait_sec=120, approval_allow="",
+                 user_labels="", cc_cwd_dm="", approval_dm=True,
+                 feishu_chunk_bytes=130000):
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
+                          chunk_bytes, queue_max, progress_sec,
+                          dump_raw=dump_raw, stale_rx_sec=stale_rx_sec,
+                          progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
+                          approval_wait_sec=approval_wait_sec,
+                          approval_allow=approval_allow, user_labels=user_labels,
+                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+
+        # 切分粒度按**飞书**的上限来（150 KiB），不照搬企微的 18000 ——
+        # 照搬只会把一条 60 KB 的回答无谓地拆成四片。
+        self.feishu_chunk_bytes = int(feishu_chunk_bytes or 130000)
+
+        self.cli = self.feishu_new_client()   # HTTP 侧（推送 / 建卡 / 改卡）
+        self.feishu_ws = None                 # 长连接客户端（transport 里建）
+        self._shape_logged = False
+
+        # 入站队列：事件循环线程只负责入队，处理在 `feishu-inbound` 线程上。
+        # 消息本来就是低频的，64 条足够；满了会**出声丢弃**（见 codec）。
+        self._in_q = queue.Queue(maxsize=64)
+        self._in_qmax = 64
+
+        # 卡片回调上下文：**一次回调一个**，所以用 threading.local。
+        # 成功路径上它会持有 `resp`（= P2CardActionTriggerResponse），
+        # `plat_approval_update_card` 把新卡片挂进去，codec 在返回时交出去。
+        self._card_ctx = threading.local()
+
+        # 发送限流（实测 12 条/秒安全，取 5 条/秒）
+        self._rate_lock = threading.Lock()
+        self._rate_events = []
+
+        # 被动回复（与企微同一个理由：不能占住事件循环线程）
+        self._reply_q = queue.Queue(maxsize=32)
+
+
+class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
+                  SlackTransportMixin, SlackOutboundMixin, SlackRenderMixin):
+    """Slack 桥。与另外两个同一个内核，只换平台层。
+
+    ⚠️ 两处与企微**本质不同**、都在各自的文件里写了原因：
+      · **超长是静默截断**（不是报错）⇒ 分片必须预切（outbound）；
+      · **空频道里没有任何帧**（没有我们自己的心跳）⇒ 活性判据不能照抄企微的 90 秒。
+    """
+
+    def __init__(self, bot_token, app_token, allow_users, allow_chats, bot_name,
+                 store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
+                 dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
+                 approval_dir=None, approval_wait_sec=120, approval_allow="",
+                 user_labels="", cc_cwd_dm="", approval_dm=True,
+                 slack_chunk_chars=3800, bot_user_id=""):
+        self.slack_bot_token = bot_token
+        self.slack_app_token = app_token
+        self.slack_bot_user_id = bot_user_id
+        self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
+                          chunk_bytes, queue_max, progress_sec,
+                          dump_raw=dump_raw, stale_rx_sec=stale_rx_sec,
+                          progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
+                          approval_wait_sec=approval_wait_sec,
+                          approval_allow=approval_allow, user_labels=user_labels,
+                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+
+        # 切分粒度按**字符**算（Slack 的上限是字符，不是字节）。
+        self.slack_chunk_chars = max(500, int(slack_chunk_chars or 3800))
+
+        self.ws = None
+        self.subscribed = threading.Event()
+        self._send_lock = threading.Lock()
+        self._shape_logged = False
+
+        # 入站队列：websocket 读线程只负责入队，处理在 `slack-inbound` 线程上。
+        self._in_q = queue.Queue(maxsize=64)
+        self._in_qmax = 64
+
+        # 节流表：post 按频道 1 条/秒，update 按频道约 1 条/1.25 秒。
+        self._rate_lock = threading.Lock()
+        self._rate_last = {}
+
+        # 「这个频道最近在哪个线程里」—— 让主动推送也落进同一个线程，
+        # 否则单聊之外的回答会散在频道顶层，用户得自己拼上下文。
+        self._slack_thread_of = {}
+
+        # 线程准入表（`app_mention` 记过哪些线程）
+        self._slack_load_threads()
+
+
+# 兼容旧写法：测试 / `tools/probe_hooks.py` / 文档里都写 `bridge.Bridge(...)`。
+# 它一直是企微那套，现在只是换成一个说清楚平台的名字。
+Bridge = WeComBridge
 
 
 def demo_card(kind):
@@ -256,18 +417,101 @@ def main():
         print(out)
         return 0 if rc == 0 else 1
 
-    bot_id, secret = cfg("WECOM_BOT_ID"), cfg("WECOM_BOT_SECRET")
-    if not bot_id or not secret:
-        log.error("缺少 WECOM_BOT_ID / WECOM_BOT_SECRET —— 请填 %s",
-                  os.path.join(ROOT, ".env"))
+    # ---------------- 平台选择 ----------------
+    # `.env` 的 `PLATFORM` 决定装配哪一套适配器。**入口本身不变** ——
+    # `python app\bridge.py` 照旧，别人接过的文档不失效。
+    platform = (cfg("PLATFORM", "wecom") or "wecom").strip().lower()
+    if platform not in ("wecom", "feishu", "slack"):
+        log.error("PLATFORM=%r 不认识（只支持 wecom / feishu / slack）", platform)
         return 2
-    refusal = whitelist_gate(cfg("WECOM_ALLOWED_USERIDS"),
-                             cfg_bool("WECOM_ALLOW_ANYONE", False))
-    if refusal:
-        log.error(refusal)
-        return 3
-    if not cfg("WECOM_ALLOWED_USERIDS"):
-        log.warning("WECOM_ALLOW_ANYONE=1 ⇒ **任何人都能指挥它**，请确认这是你要的")
+
+    app_id = app_secret = bot_id = secret = ""
+    slack_bot_token = slack_app_token = ""
+    if platform == "slack":
+        # 两个 token 缺一不可，而且**来源不同**：
+        #   SLACK_BOT_TOKEN（xoxb-）发消息用；SLACK_APP_TOKEN（xapp-）建 Socket Mode 用。
+        # 拿一个顶两个是最常见的错 —— 自检见 tools/slack_cred.py。
+        slack_bot_token = cfg("SLACK_BOT_TOKEN")
+        slack_app_token = cfg("SLACK_APP_TOKEN")
+        if not slack_bot_token or not slack_app_token:
+            log.error("缺少 SLACK_BOT_TOKEN / SLACK_APP_TOKEN —— 请填 %s"
+                      "（不确定类型就跑 tools/slack_cred.py）",
+                      os.path.join(ROOT, ".env"))
+            return 2
+        # 白名单口径是 **member ID（U…）**，不是 @handle：handle 能改、能被别人抢。
+        refusal = whitelist_gate(cfg("SLACK_ALLOWED_USERIDS"),
+                                 cfg_bool("SLACK_ALLOW_ANYONE", False),
+                                 key="SLACK_ALLOWED_USERIDS", what="member ID",
+                                 anyone_key="SLACK_ALLOW_ANYONE")
+        if refusal:
+            log.error(refusal)
+            return 3
+        if not cfg("SLACK_ALLOWED_USERIDS"):
+            log.warning("SLACK_ALLOW_ANYONE=1 ⇒ **任何人都能指挥它**，请确认这是你要的")
+    elif platform == "feishu":
+        app_id, app_secret = cfg("FEISHU_APP_ID"), cfg("FEISHU_APP_SECRET")
+        if not app_id or not app_secret:
+            log.error("缺少 FEISHU_APP_ID / FEISHU_APP_SECRET —— 请填 %s",
+                      os.path.join(ROOT, ".env"))
+            return 2
+        # ⚠️ 白名单口径是 **open_id**（应用内唯一）：换一个飞书应用要重填。
+        # 这一点写进 .env 注释里，免得将来"换了应用突然全被拒"被当成 bug 排查。
+        refusal = whitelist_gate(cfg("FEISHU_ALLOWED_OPENIDS"),
+                                 cfg_bool("FEISHU_ALLOW_ANYONE", False),
+                                 key="FEISHU_ALLOWED_OPENIDS", what="open_id",
+                                 anyone_key="FEISHU_ALLOW_ANYONE")
+        if refusal:
+            log.error(refusal)
+            return 3
+        if not cfg("FEISHU_ALLOWED_OPENIDS"):
+            log.warning("FEISHU_ALLOW_ANYONE=1 ⇒ **任何人都能指挥它**，请确认这是你要的")
+    else:
+        bot_id, secret = cfg("WECOM_BOT_ID"), cfg("WECOM_BOT_SECRET")
+        if not bot_id or not secret:
+            log.error("缺少 WECOM_BOT_ID / WECOM_BOT_SECRET —— 请填 %s",
+                      os.path.join(ROOT, ".env"))
+            return 2
+        refusal = whitelist_gate(cfg("WECOM_ALLOWED_USERIDS"),
+                                 cfg_bool("WECOM_ALLOW_ANYONE", False))
+        if refusal:
+            log.error(refusal)
+            return 3
+        if not cfg("WECOM_ALLOWED_USERIDS"):
+            log.warning("WECOM_ALLOW_ANYONE=1 ⇒ **任何人都能指挥它**，请确认这是你要的")
+    if platform == "feishu":
+        try:
+            import lark_oapi  # noqa: F401
+        except ImportError:
+            log.error("[main] 缺少依赖 lark-oapi —— 飞书适配器要用它。"
+                      "装：%s -m pip install lark-oapi", sys.executable)
+            return 2
+
+    slack_bot_user_id = ""
+    if platform == "slack":
+        # `auth.test` 一次拿三样：token 是否有效、机器人自己的 user_id
+        # （剥 `<@U…>` 和过滤"自己发的消息"都要它）、以及所属 workspace。
+        # 放在启动时做，是为了**凭据错了当场拒绝启动**，而不是等第一条消息不来。
+        try:
+            _r = requests.post(
+                "https://slack.com/api/auth.test",
+                headers={"Authorization": "Bearer " + slack_bot_token},
+                timeout=15).json()
+        except requests.RequestException as e:
+            # ⚠️ **网络不通 ≠ 凭据错**，不能因此拒绝启动（2026-11-07 实测踩到：
+            # 开机时 slack.com 连接超时 15 秒，桥直接 return 2 ⇒ 常驻服务起不来，
+            # 只能等下一次计划任务触发）。网络恢复后由 transport 在建连成功时补解析身份。
+            log.warning("[main] 暂时连不上 slack.com（%s）—— 先启动，"
+                        "连上后再补校验 token。", type(e).__name__)
+        else:
+            if not _r.get("ok"):
+                log.error("[main] SLACK_BOT_TOKEN 无效：%s"
+                          "（是不是填成了 user token？跑 tools/slack_cred.py 看类型）",
+                          _r.get("error"))
+                return 2
+            slack_bot_user_id = _r.get("user_id") or ""
+            log.info("[main] Slack workspace=%s（%s）bot=%s",
+                     _r.get("team"), _r.get("team_id"), slack_bot_user_id)
+    log.info("[main] 平台 = %s", platform)
 
     # 除认证外，还要把 `wecom-cli` 的凭据目录透传给子进程:
     # 不透传的话，模型跑 `wecom-cli` 会落到默认目录
@@ -308,19 +552,29 @@ def main():
         inject_env=inject,
         show_usage=cfg_bool("CC_SHOW_USAGE", True),
     )
-    # 单实例保护：自启 + 手动启动/测试同时跑 = 双份回复、双份执行
-    if not acquire_single_instance():
+    # 单实例保护：自启 + 手动启动/测试同时跑 = 双份回复、双份执行。
+    # ⚠️ 互斥量**按平台分开**：两个平台是不同的机器人、不同的长连接，
+    #    同时跑不冲突；而同**一个**平台起两份就会分摊事件（飞书 3c 实测，
+    #    企微则是服务端踢旧连接）—— 那才是这条锁真正要挡的。
+    mutex = MUTEX_NAME if platform == "wecom" else f"{MUTEX_NAME}-{platform}"
+    if not acquire_single_instance(mutex):
         # 返回 0：这是**正常**结果，不是失败 —— 任务计划程序每 3 分钟来敲一次门，
         # 活着的时候它就该安静地什么都不做（返回非 0 会被记成失败）。
         log.info("[main] 已有实例在跑（互斥量 %s），本次启动放弃。"
-                 "要重启请先停掉常驻实例；测试发送同理。", MUTEX_NAME)
+                 "要重启请先停掉常驻实例；测试发送同理。", mutex)
         return 0
 
     store = Store(cfg("CC_DB", DEFAULT_DB))
     # 审批卡片（默认关）：开了才会把决策目录注入子进程环境，hook 也才会干活。
     approval_dir = ""
     if cfg_bool("CC_APPROVAL", False):
-        approval_dir = cfg("CC_APPROVAL_DIR") or os.path.join(ROOT, "data", "approvals")
+        # ⚠️ **决策目录必须按平台分开**（2026-11-05 实测踩到）：
+        # 两个平台的桥如果共用一个目录，A 平台会扫到"发给 B 平台"的请求，
+        # 往自己这边发卡片必然失败（会话 ID 不通）⇒ 按 fail-closed **立刻写拒绝**
+        # ⇒ 用户在 B 平台刚看到卡片，点下去已经是"已失效"。
+        # 现场日志：`卡片没发出去（invalid chatid … 93006）⇒ 直接拒绝`。
+        # 这不是"偶发竞态"，是**必然**：谁的扫描线程先跑到，谁就把另一边的请求毙掉。
+        approval_dir = cfg("CC_APPROVAL_DIR") or default_approval_dir(platform)
         try:
             os.makedirs(approval_dir, exist_ok=True)
         except OSError as e:
@@ -355,23 +609,61 @@ def main():
                  " + 私聊" if approval_dm else "；私聊已显式设为全自动",
                  cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                  cfg("CC_APPROVAL_ALLOW") or "(默认 Read,Grep,Glob,TodoWrite)")
+        # 打出来：这是两个平台最容易互相踩的地方（见上面那段注释）
+        log.info("[approval] 决策目录 = %s（平台 %s 独占）", approval_dir, platform)
     elif approval_dm_raw:
         # 显式设了 CC_APPROVAL_DM、但审批整体没开 ⇒ 别让用户以为私聊在挂卡。
         log.warning("[approval] 你显式设了 CC_APPROVAL_DM，但 CC_APPROVAL=0 ⇒ "
                     "审批整体未启用，群聊和私聊都不会弹卡。")
-    bridge = Bridge(bot_id, secret, cfg("WECOM_ALLOWED_USERIDS"),
-                    cfg("WECOM_ALLOWED_CHATIDS"), cfg("WECOM_BOT_NAME"),
-                    store, runner, cc_cwd,
-                    cfg_int("CHUNK_BYTES", 18000), cfg_int("QUEUE_MAX", 20),
-                    cfg_int("CC_PROGRESS_SEC", 90), dump_raw=args.dump_raw,
-                    stale_rx_sec=cfg_int("CC_STALE_RX_SEC", STALE_RX_SEC),
-                    progress_hb_sec=cfg_int("CC_PROGRESS_HEARTBEAT_SEC",
-                                            PROGRESS_HEARTBEAT_SEC),
-                    approval_dir=approval_dir,
-                    approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
-                    approval_allow=cfg("CC_APPROVAL_ALLOW"),
-                    user_labels=cfg("WECOM_USER_LABELS"),
-                    cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+    if platform == "slack":
+        bridge = SlackBridge(
+            slack_bot_token, slack_app_token,
+            cfg("SLACK_ALLOWED_USERIDS"), cfg("SLACK_ALLOWED_CHANNELIDS"),
+            cfg("SLACK_BOT_NAME", "CC BOT"),
+            store, runner, cc_cwd,
+            cfg_int("CHUNK_BYTES", 18000), cfg_int("QUEUE_MAX", 20),
+            cfg_int("CC_PROGRESS_SEC", 90), dump_raw=args.dump_raw,
+            stale_rx_sec=cfg_int("CC_STALE_RX_SEC", STALE_RX_SEC),
+            progress_hb_sec=cfg_int("CC_PROGRESS_HEARTBEAT_SEC",
+                                    PROGRESS_HEARTBEAT_SEC),
+            approval_dir=approval_dir,
+            approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
+            approval_allow=cfg("CC_APPROVAL_ALLOW"),
+            user_labels=cfg("SLACK_USER_LABELS"),
+            cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+            slack_chunk_chars=cfg_int("SLACK_CHUNK_CHARS", 3800),
+            bot_user_id=slack_bot_user_id)
+    elif platform == "feishu":
+        bridge = FeishuBridge(
+            app_id, app_secret,
+            cfg("FEISHU_ALLOWED_OPENIDS"), cfg("FEISHU_ALLOWED_CHATIDS"),
+            cfg("FEISHU_BOT_NAME", "CC BOT"),
+            store, runner, cc_cwd,
+            cfg_int("CHUNK_BYTES", 18000), cfg_int("QUEUE_MAX", 20),
+            cfg_int("CC_PROGRESS_SEC", 90), dump_raw=args.dump_raw,
+            stale_rx_sec=cfg_int("CC_STALE_RX_SEC", STALE_RX_SEC),
+            progress_hb_sec=cfg_int("CC_PROGRESS_HEARTBEAT_SEC",
+                                    PROGRESS_HEARTBEAT_SEC),
+            approval_dir=approval_dir,
+            approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
+            approval_allow=cfg("CC_APPROVAL_ALLOW"),
+            user_labels=cfg("FEISHU_USER_LABELS"),
+            cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+            feishu_chunk_bytes=cfg_int("FEISHU_CHUNK_BYTES", 130000))
+    else:
+        bridge = Bridge(bot_id, secret, cfg("WECOM_ALLOWED_USERIDS"),
+                        cfg("WECOM_ALLOWED_CHATIDS"), cfg("WECOM_BOT_NAME"),
+                        store, runner, cc_cwd,
+                        cfg_int("CHUNK_BYTES", 18000), cfg_int("QUEUE_MAX", 20),
+                        cfg_int("CC_PROGRESS_SEC", 90), dump_raw=args.dump_raw,
+                        stale_rx_sec=cfg_int("CC_STALE_RX_SEC", STALE_RX_SEC),
+                        progress_hb_sec=cfg_int("CC_PROGRESS_HEARTBEAT_SEC",
+                                                PROGRESS_HEARTBEAT_SEC),
+                        approval_dir=approval_dir,
+                        approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
+                        approval_allow=cfg("CC_APPROVAL_ALLOW"),
+                        user_labels=cfg("WECOM_USER_LABELS"),
+                        cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
 
     if cfg_bool("CC_KEEP_AWAKE", True):
         start_keep_awake()
@@ -392,6 +684,58 @@ def main():
             with open(args.send_test_file, encoding="utf-8") as f:
                 payload = f.read()
         chatid, derived_type = (args.chatid, None) if args.chatid else store.last_chat()
+
+        # ---- Slack 的测试发送：同样不需要长连接（chat.postMessage 就够）----
+        if platform == "slack":
+            if args.send_card:
+                log.error("[test] --send-card 的样例卡是**企微模板卡**，Slack 不认。"
+                          "Slack 的卡片是 Block Kit，形状完全不同。")
+                return 4
+            if not chatid:
+                log.error("[test] 无目标会话：先给机器人发条消息，或显式 --chatid "
+                          "（频道 ID `C…` 或单聊 `D…`）")
+                return 4
+            chat_type = (args.chat_type if args.chat_type is not None
+                         else (derived_type or 2))
+            log.info("[test] 目标 %s type=%s 内容 %d 字符",
+                     chatid, chat_type, len(payload))
+            if args.send_auto:
+                failed = bridge.send_chunks(chatid, chat_type, payload)
+                log.info("[test] >>> %s", "全部送达" if not failed
+                         else f"有 {len(failed)} 段未送达")
+                ok = not failed
+            else:
+                r = bridge.send_text(chatid, chat_type, payload)
+                log.info("[test] 平台结果: %s", r)
+                log.info("[test] >>> %s", "送达" if r["sent"] else "被拒收/结果未知")
+                ok = r["sent"]
+            return 0 if ok else 1
+
+        # ---- 飞书的测试发送：不需要先起长连接（HTTP 就能发）----
+        if platform == "feishu":
+            if args.send_card:
+                log.error("[test] --send-card 的样例卡是**企微模板卡**，飞书不认。"
+                          "飞书请用 tools/feishu_card_probe.py。")
+                return 4
+            if not chatid:
+                log.error("[test] 无目标会话：先给机器人发条消息，或显式 --chatid")
+                return 4
+            chat_type = (args.chat_type if args.chat_type is not None
+                         else (derived_type or 2))
+            nbytes = len(payload.encode("utf-8"))
+            log.info("[test] 目标 %s type=%s 内容 %d 字节（%d 字符）",
+                     chatid, chat_type, nbytes, len(payload))
+            if args.send_auto:
+                failed = bridge.send_chunks(chatid, chat_type, payload)
+                log.info("[test] >>> %s", "全部送达" if not failed
+                         else f"有 {len(failed)} 段未送达")
+                ok = not failed
+            else:
+                r = bridge.send_text(chatid, chat_type, payload)
+                log.info("[test] 平台结果: %s", r)
+                log.info("[test] >>> %s", "送达" if r["sent"] else "被拒收/结果未知")
+                ok = r["sent"]
+            return 0 if ok else 1
         if not chatid:
             log.error("[test] 无目标 chatid：先让用户给机器人发条消息，或显式 --chatid")
             return 4
@@ -437,10 +781,13 @@ def main():
         return 0 if ok else 1
 
     try:
-        bridge.run_forever()
+        # ⚠️ 走契约的 `plat_run()`，**不要**直接调 `run_forever()` ——
+        # 后者是企微平台层的方法名，飞书那边叫 `feishu_run_forever`。
+        # 这一步就是契约存在的意义：入口不该知道平台方法叫什么。
+        bridge.plat_run()
     except KeyboardInterrupt:
         log.info("[main] 退出")
-        bridge.stop_bot()
+        bridge.plat_stop()
     return 0
 
 

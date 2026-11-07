@@ -20,7 +20,7 @@ LOGDIR = os.path.join(ROOT, "logs")
 DEFAULT_DB = os.path.join(ROOT, "data", "bridge.db")
 
 # 流式消息（aibot_respond_msg + stream.id）：让「收到，处理中…」和正文**共用一个气泡**。
-# 两条硬约束来自官方文档 path/101463（原文已核对，见 notes/DECISIONS-2026-10-27.md §17）：
+# 两条硬约束来自官方文档 path/101463（原文已逐条核对）：
 #   · 从首帧起 **10 分钟**内必须 finish=true，否则平台自动结束、消息不再可更新；
 #   · 单帧 content ≤ **20480 字节**（和 aibot_send_msg 的 markdown 上限一致）。
 STREAM_MAX_SEC = 570          # 10 分钟窗口留 30 秒余量，别卡着边界发
@@ -150,7 +150,21 @@ def parse_labels(s):
             out[k] = v
     return out
 
-def whitelist_gate(allowed, allow_anyone):
+def default_approval_dir(platform):
+    """每个平台一个审批决策目录。
+
+    ⚠️ **不能共用**（2026-11-05 实测）：两个平台的桥都会扫这个目录，谁的线程先跑到
+    谁就处理 —— A 平台扫到"发给 B 平台"的请求时，往自己这边发卡片必然失败
+    （会话 ID 不通），而失败路径是 fail-closed **立刻写拒绝** ⇒ 用户在 B 平台
+    刚看到卡片，点下去已经是"已失效"。现场日志：
+    `卡片没发出去（invalid chatid … 93006）⇒ 直接拒绝`。
+    """
+    name = "approvals" if platform == "wecom" else f"approvals-{platform}"
+    return os.path.join(ROOT, "data", name)
+
+
+def whitelist_gate(allowed, allow_anyone, key="WECOM_ALLOWED_USERIDS",
+                   what="userid", anyone_key="WECOM_ALLOW_ANYONE"):
     """启动闸门：白名单为空就**拒绝启动**（fail-closed）。
 
     为什么不是"警告一下继续跑"：空白名单意味着谁都能指挥它，而档位一旦是全自动，
@@ -161,12 +175,15 @@ def whitelist_gate(allowed, allow_anyone):
 
     返回 None = 放行；返回字符串 = 拒绝启动的原因。
     单独抽成函数是为了能被单测直接调（`main()` 还牵着平台凭据和互斥量，整段不好测）。
+
+    `key` / `what` / `anyone_key` 是给第二个平台用的：飞书的白名单是 **open_id**，
+    企微是 userid —— 同一个判据，配置名不同。默认值保持企微原文案不变。
     """
     if parse_list(allowed):
         return None
     if allow_anyone:
         return None
-    return ("WECOM_ALLOWED_USERIDS 为空 —— 拒绝启动。"
+    return (f"{key} 为空 —— 拒绝启动。"
             "白名单是唯一的鉴权（群里的 @ 只是消息路由，不是身份）。"
-            "请填上允许指挥的 userid（逗号分隔）；"
-            "确实要让所有人都能用，就显式设 WECOM_ALLOW_ANYONE=1。")
+            f"请填上允许指挥的 {what}（逗号分隔）；"
+            f"确实要让所有人都能用，就显式设 {anyone_key}=1。")
