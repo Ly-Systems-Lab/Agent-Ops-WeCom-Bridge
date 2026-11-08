@@ -124,6 +124,10 @@ cp .env.example .env
 > ⚠️ **OAuth 登录**（`settings.json` 里没有 `env` 段）在这条路径上**未实测**。
 > 最稳的做法是显式填 `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`。
 
+> ⚠️ **换模型、换 API key / 服务商 / 工作区，改完都要重启桥。**
+> `.env` 只在进程**启动时**读一次，运行期不会重读 —— 只改文件不重启，
+> 聊天里跑的仍是旧的那套，而且不会有任何报错提示你。
+
 > ⚠️ `.env` **不做变量展开**：写 `%USERPROFILE%\...` 会被当成字面路径。
 > 路径一律写展开后的绝对路径（`where claude` 能给准确位置）。
 
