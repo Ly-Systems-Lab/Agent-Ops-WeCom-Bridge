@@ -15,6 +15,7 @@
   Tier 3（**50+/分钟**）。两者都做成节流，不做"撞了再退避"。
 """
 
+import re
 import threading
 import time
 
@@ -35,48 +36,64 @@ SLACK_TOO_LONG = 41301
 
 
 def _split_chars(text, limit):
-    """按**字符**切分，优先在段落/换行处断开。
+    """按**字符**切分，优先在段落/换行处断开，**并且不增删任何一个字符**。
 
     和 `core/text.chunk_md` 的区别只有一个：那个按**字节**。
     这里必须按字符 —— Slack 的上限是按字符算的。
+
+    ⚠️ **不变量：`"".join(_split_chars(t, n)) == t`。** 这条是被火烧出来的
+    （2026-11-08 实发前自查）：旧实现用 `text.split("\\n\\n")` 把分隔符吃掉，
+    再给**每一段**补一个 `"\\n\\n"` ⇒ ① 每段凭空多两个换行；
+    ② 段落超过上限时，那两个换行会**自己独立成片** ⇒ 用户会收到
+    "只有空行的 (3/9)" 这种气泡。真实回答基本都是多段落的，所以必现。
+    ⇒ 现在用 `re.split` **保留分隔符**，先按空行分段、段内按行、最后才硬切。
+    改这里之前先把 `tools/test_slack.py` 的"逐字符相等"那条跑一遍。
     """
     text = text or ""
     if len(text) <= limit:
         return [text]
-    parts, cur = [], ""
-    # 先按空行分段，段内再按行，最后才硬切 —— 尽量不把一个句子劈开
-    for para in text.split("\n\n"):
-        piece = (para + "\n\n")
-        if len(piece) <= limit:
-            if len(cur) + len(piece) > limit:
-                parts.append(cur)
-                cur = ""
-            cur += piece
-            continue
+
+    parts, cur, cur_len = [], [], 0
+
+    def flush():
+        nonlocal cur, cur_len
         if cur:
-            parts.append(cur)
-            cur = ""
-        # 这一段自己就超了
-        lines = piece.split("\n")
-        if len(lines) > 1:
-            for line in lines:
-                seg = line + "\n"
-                if len(seg) > limit:
-                    if cur:
-                        parts.append(cur)
-                        cur = ""
-                    parts.extend(seg[i:i + limit]
-                                 for i in range(0, len(seg), limit))
-                elif len(cur) + len(seg) > limit:
-                    parts.append(cur)
-                    cur = seg
-                else:
-                    cur += seg
-        else:
-            parts.extend(piece[i:i + limit] for i in range(0, len(piece), limit))
-    if cur:
-        parts.append(cur)
-    return [p for p in parts if p] or [""]
+            parts.append("".join(cur))
+            cur, cur_len = [], 0
+
+    def fit(seg):
+        """塞进当前片；放不下就收口。`seg` 本身必须 ≤ limit。"""
+        nonlocal cur_len
+        if cur_len + len(seg) > limit:
+            flush()
+        cur.append(seg)
+        cur_len += len(seg)
+
+    # 分隔符进捕获组 ⇒ 拼回去和原文**逐字符一致**
+    for seg in re.split(r"(\n{2,})", text):
+        if not seg:
+            continue
+        if len(seg) <= limit:
+            fit(seg)
+            continue
+        # 这一段自己就超了：按行切（保留原换行），单行仍超才硬切
+        for line in seg.splitlines(keepends=True):
+            # ⚠️ 硬切要**先填满当前片剩下的空位**再收口。否则 3900 字的一行
+            # 会切成 3800 + 100 两片，而那 100 字又被单独凑成一片 ——
+            # 实测 11,706 字符会虚高到 6 片（下限是 4 片）。
+            while len(line) > limit - cur_len:
+                room = limit - cur_len
+                if room <= 0:
+                    flush()
+                    continue
+                cur.append(line[:room])
+                cur_len += room
+                line = line[room:]
+                flush()
+            if line:
+                fit(line)
+    flush()
+    return parts or [""]
 
 
 class SlackBubble:

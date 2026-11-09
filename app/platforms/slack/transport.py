@@ -54,6 +54,14 @@ from common import BACKOFF_MAX, BACKOFF_START, cfg, cfg_int, knob, log
 
 API = "https://slack.com/api/"
 
+# 网络抖动的容忍窗口 —— **只对"确定没送达"的异常生效**（见 `_slack_unsent`）。
+# 4 次尝试、等 1/2/4/8s，累计 **15s**（用户 2026-11-08 定的口径）。
+# 为什么从 2 次 / 1.5s 放大：这个网络下 Slack **直连可用但不稳**，一次抖动就能
+# 把原来的窗口吃穿（当天 00:44:18 那记 SSLError 就是靠重试救回来的，但只够试 1 次）。
+# 放大是安全的 —— 重试的前提是"一个字节都没发出去"，不会造成重复消息。
+NET_RETRY_TIMES = 4
+NET_RETRY_BASE_SEC = 1.0
+
 
 def _slack_unsent(exc):
     """这个异常能不能**确定请求没送到平台**？只有"连接都没建立起来"才算。
@@ -80,9 +88,16 @@ class SlackTransportMixin:
     def slack_proxy(self):
         """返回 `http://host:port` 或空串。配了才用。
 
-        为什么必须专门配（用户 2026-11-07 实测）：
-          · Slack 在国内**直连不通**（`slack.com:443` 连 32 秒超时，而同一时刻
-            baidu / github / 飞书 / 企微全部正常）；
+        ⚠️ **配了就是强制走代理**，代理一倒桥就全哑 —— 即使直连本来是通的。
+        实测过两次，结论相反，说明**这一项不能靠经验默认**：
+          · 2026-11-07：`slack.com:443` 直连 32 秒超时（同刻 baidu / github / 飞书 /
+            企微全部正常）⇒ 当时确实必须配；
+          · 2026-11-08：同一台机器**不配本项**也能建起 Socket Mode、收到事件、
+            回出消息（AWS 东京、TLS 1.3、`api.test` 200）。
+        ⇒ 现在的口径：**默认留空，不通再填**。它解决的是"直连不通"，不是"直连不稳"；
+          抖动交给 `NET_RETRY_TIMES` 那套重试窗口（4 次 / 累计 15s）。
+
+        另一条跟能不能连通无关、但必须记住的：
           · `requests` 认 `HTTPS_PROXY` 环境变量，但 **`websocket-client` 不认** ——
             长连接那条必须把代理参数显式传进 `run_forever`。
             只设环境变量的话，API 通了、事件一条也来不了，而且看起来像"连上了但不理人"。
@@ -104,7 +119,7 @@ class SlackTransportMixin:
     # -- HTTP 底座（outbound 也走这里，一处管鉴权与限流）--
 
     def slack_http(self, method, token, params=None, timeout=20, retry_429=2,
-                   retry_net=2):
+                   retry_net=NET_RETRY_TIMES):
         """调一个 Slack Web API 方法，返回平台原样的 dict。**从不抛异常。**
 
         **429 要退避重试，不能当失败** —— 和飞书 `230020` 同一个处理口径。
@@ -132,7 +147,7 @@ class SlackTransportMixin:
                 unsent = _slack_unsent(e)
                 if unsent and nnet < retry_net:
                     nnet += 1
-                    wait = 0.5 * (2 ** (nnet - 1))
+                    wait = NET_RETRY_BASE_SEC * (2 ** (nnet - 1))
                     log.warning("[slack] %s 没连上平台（%s），%.1fs 后重试 %d/%d",
                                 method, detail, wait, nnet, retry_net)
                     time.sleep(wait)
