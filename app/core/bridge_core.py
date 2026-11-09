@@ -11,6 +11,7 @@ import threading
 import time
 
 from common import APPROVAL_POLL_SEC, PROGRESS_HEARTBEAT_SEC, knob, log
+from core.model_store import valid_model_name
 from core.text import _looks_like_resume_failure, safe_to_retry_resume
 
 
@@ -227,6 +228,105 @@ class CoreMixin:
             self._status_async(chatid, chat_type, userid)
             return
 
+    # -- /model：模型的唯一真源是 data/model.json --
+
+
+    def _model_async(self, arg, chatid, chat_type, userid, response_url):
+        """在旁路线程里处理 `/model`。
+
+        **为什么不能同步**：切换要先做一次真实探测（3~10 秒）。放在回调线程上
+        会把后面所有消息一起堵住 —— 而 `/stop` 也在同一条线上。
+        """
+        def _go():
+            try:
+                msg = self._model_command(arg, userid)
+            except Exception as e:                 # noqa: BLE001
+                log.exception("[model] /model 处理失败")
+                msg = f"⚠️ 处理 `/model` 时出错：{type(e).__name__}: {e}"
+            self.plat_reply(response_url, msg)
+        threading.Thread(target=_go, daemon=True, name="model-cmd").start()
+
+
+    def _model_command(self, arg, userid):
+        ms = getattr(self, "model_store", None)
+        if ms is None:
+            return ("本进程没有启用模型热切换（没有 model_store）。\n\n"
+                    "> 模型仍由 `.env` 的 `CC_MODEL` 决定，改完需要重启桥。")
+        snap = ms.snapshot()
+        cur = snap["current"]
+        arg = (arg or "").strip()
+
+        if not arg or arg.lower() in ("list", "ls"):
+            return self._model_list_text(snap)
+
+        if arg.lower() in ("reset", "default"):
+            ok, msg = ms.reset(actor=userid)
+            if not ok:
+                return f"❌ {msg}"
+            log.info("[ctl] /model reset by %s", userid)
+            return f"✅ {msg}\n\n> 下一条消息起生效。发 `/model` 看当前值。"
+
+        name = arg
+        if arg.isdigit():
+            i = int(arg)
+            cands = snap["candidates"]
+            if not (1 <= i <= len(cands)):
+                return (f"❌ 编号 {i} 不在 1~{len(cands)} 之间。\n\n"
+                        f"> 发 `/model` 看列表。")
+            name = cands[i - 1]
+
+        ok, why = valid_model_name(name)
+        if not ok:
+            return f"❌ 模型名不合法：{why}"
+        if name == cur:
+            return f"当前已经是 `{name}`，没有改动。"
+
+        # ⚠️ **先探测，通过才写** —— 错的模型永远进不了真源。
+        probe = getattr(self.runner, "probe", None)
+        if probe is None:
+            return ("❌ 这个 Runner 不支持探测（老版本或测试桩）。\n\n"
+                    "> 为了不把没验证过的值写进真源，这次切换已拒绝。")
+        ok, detail = probe(name, cwd=self.cc_cwd)
+        if not ok:
+            return (f"❌ `{name}` **不可用**：{detail}\n\n"
+                    f"> 当前模型没变，仍是 `{cur or '（未设置）'}`。\n"
+                    f"> 发 `/model` 看列表。")
+
+        ok, msg = ms.set(name, actor=userid)
+        if not ok:
+            return f"❌ {msg}"
+        log.info("[ctl] /model 切换 %r → %r by %s（探测 %s）", cur, name, userid, detail)
+        return (f"✅ {msg}（探测通过，{detail}）\n\n"
+                f"> **下一条消息起生效**；正在跑的任务不受影响。\n"
+                f"> 这是桥的全局设置，群聊和私聊一起变。")
+
+
+    def _model_list_text(self, snap):
+        lines = [f"🧠 **当前模型**：`{snap['current'] or '（未设置）'}`"]
+        if snap["updated_at"]:
+            by = f"，by {snap['updated_by']}" if snap["updated_by"] else ""
+            lines.append(f"> 更新于 {snap['updated_at']}{by}")
+        if not snap["file_ok"]:
+            # 采信了兜底值，就得说出来 —— 否则用户以为"我设的那个还在跑"。
+            lines.append(f"> ⚠️ 真源文件有问题：{snap['file_error']}（已用兜底值）")
+        lines.append("")
+        cands = snap["candidates"]
+        if cands:
+            lines.append("**可选**（来自 `.env` 的 `CC_MODELS`）：")
+            for i, c in enumerate(cands, 1):
+                lines.append(f"{i}. `{c}`" + ("  ← 当前" if c == snap["current"] else ""))
+            lines.append("")
+            lines.append("发 `/model <编号>` 或 `/model <名字>` 切换；"
+                         "也可以直接发任意模型名（会先探测一次）。")
+        else:
+            lines.append("没有配置 `CC_MODELS` 白名单。")
+            lines.append("发 `/model <模型名>` 直接切换（会先探测一次）。")
+        if snap["seed"]:
+            lines.append("")
+            lines.append(f"`/model reset` 回到 `.env` 的默认值 `{snap['seed']}`。")
+        return "\n".join(lines)
+
+
     # -- /status 卡片 --
 
 
@@ -242,6 +342,13 @@ class CoreMixin:
             cur = dict(self._current.get((chatid, chat_type)) or {}) or None
             others = len(self._current)
         usage = (self._last_usage.get((chatid, userid)) or "").replace("📊 ", "").strip()
+        # 模型走真源（可能已经被 `/model` 改过）。取不到就如实写"由 Runner 决定"，
+        # 不编造 —— 这张卡上的每一项都必须是"现在真的这样"。
+        try:
+            model = self.runner.live_model() if hasattr(self.runner, "live_model") \
+                else getattr(self.runner, "model", "")
+        except Exception:                          # noqa: BLE001
+            model = ""
         return [
             ("队列", f"{self._q.qsize()} 条"),
             ("当前任务",
@@ -250,6 +357,7 @@ class CoreMixin:
             ("上下文", usage or "—（重启后首轮还没跑）"),
             ("会话", (sid or "")[:8] or "（无，下一轮新建）"),
             ("档位", f"{self.runner.perm_mode or '默认'} / 超时 {self.runner.timeout}s"),
+            ("模型", model or "（未设置，用 claude 默认）"),
             ("工作区", cwd),
         ]
 
@@ -909,6 +1017,12 @@ class CoreMixin:
         lowered = text.strip().lower()
         if lowered in ("/new", "/stop", "/status"):
             self._handle_control(lowered, chatid, chat_type, userid, response_url)
+            return
+        # `/model` 带参数，只能前缀匹配（不能塞进上面的精确匹配集合）。
+        if (lowered == "/model" or lowered.startswith("/model ")
+                or lowered.startswith("/model\t")):
+            self._model_async(text.strip()[len("/model"):].strip(),
+                              chatid, chat_type, userid, response_url)
             return
 
         # —— 普通任务：**本会话**忙就丢弃，别的会话在跑不影响 ——

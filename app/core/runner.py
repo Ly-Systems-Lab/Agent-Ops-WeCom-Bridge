@@ -6,6 +6,7 @@
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -20,6 +21,25 @@ def _clip(s, n):
     """压成一行、截到 n 字符。气泡里的一行进度，不许换行撑开。"""
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[: max(1, n - 1)] + "…"
+
+
+def _probe_error_text(s):
+    """把探测失败的原文压成一句人能读的话。
+
+    原文长这样（2026-11-09 实测）：
+        `API Error: 400 event:error data:{"request_id":"…","code":"InvalidParameter",
+         "message":"Model not exist."}`
+    直接贴进聊天里全是 request_id，用户看不出哪儿错了。**压不出来就截断照贴** ——
+    宁可难看，也不能把原因吞掉。
+    """
+    s = (s or "").strip()
+    if not s:
+        return ""
+    m = re.search(r'"message"\s*:\s*"([^"]+)"', s)
+    if m:
+        head = re.match(r"(API Error:\s*\d+|HTTP\s*\d+)", s)
+        return ((head.group(1) + " · ") if head else "") + m.group(1)
+    return _clip(s, 160)
 
 
 def _short_path(p, limit=48):
@@ -68,9 +88,12 @@ def tool_desc(name, inp):
 
 class Runner:
     def __init__(self, exe, model, perm_mode, sources, timeout,
-                 allowed, disallowed, inject_env, show_usage):
+                 allowed, disallowed, inject_env, show_usage, model_fn=None):
         self.exe = exe
         self.model = model
+        # 每条消息现取一次（唯一真源是 data/model.json，见 core/model_store.py）。
+        # None = 用构造时那个固定值（老单测与 tools/probe_hooks.py 走这条）。
+        self.model_fn = model_fn
         self.perm_mode = perm_mode
         self.sources = sources
         self.timeout = timeout
@@ -93,20 +116,42 @@ class Runner:
         """
         return Runner(self.exe, self.model, self.perm_mode, self.sources,
                       self.timeout, self.allowed, self.disallowed,
-                      self.inject_env, self.show_usage)
+                      self.inject_env, self.show_usage, model_fn=self.model_fn)
 
-    def build_env(self):
+    def live_model(self):
+        """这一轮该用的模型。`model_fn` 抛异常时退回构造时的值 ——
+        模型文件的毛病不该让任务起不来（那边已经记过 ERROR 了）。"""
+        if self.model_fn is None:
+            return self.model
+        try:
+            m = self.model_fn()
+        except Exception as e:                     # noqa: BLE001
+            log.error("[run] 取当前模型失败（%s）⇒ 退回 %r", e, self.model)
+            return self.model
+        return self.model if m is None else m
+
+    def build_env(self, model=None):
         """剥掉继承的 ANTHROPIC*/CLAUDE*，再用桥自己 .env 里的值注入。
 
         理由（实测）：排掉 user 设置后认证就没了；而继承来的环境变量会让
         "认证成功"变成假阳性。桥的真实运行环境本来也不该依赖父进程。
+
+        ⚠️ 热切换时**还要把 `ANTHROPIC_MODEL` 对齐到同一个值**：命令行上的
+        `--model` 和注入的 `ANTHROPIC_MODEL` 指向不同模型时，"到底用哪个"
+        取决于哪一层先读，说不清。宁可两处写成同一个。
         """
         e = {k: v for k, v in os.environ.items()
              if not (k.upper().startswith("ANTHROPIC") or k.upper().startswith("CLAUDE"))}
         e.update(self.inject_env)
+        if self.model_fn is not None:
+            m = self.live_model() if model is None else model
+            if m:
+                e["ANTHROPIC_MODEL"] = m
+            else:
+                e.pop("ANTHROPIC_MODEL", None)
         return e
 
-    def build_cmd(self, session_id):
+    def build_cmd(self, session_id, model=None):
         # `stream-json` + 增量读：`json` 模式要等进程结束才有输出，**没有拦截点**
         # ⇒ 真进度气泡和审批卡片都做不出来。`result` 事件字段与 `json` 模式完全一致（实测）。
         # ⚠️ `--verbose` 是**硬要求**：不带它 `claude` 直接
@@ -116,8 +161,9 @@ class Runner:
             cmd += ["--setting-sources", self.sources]
         if self.perm_mode:
             cmd += ["--permission-mode", self.perm_mode]
-        if self.model:
-            cmd += ["--model", self.model]
+        m = self.live_model() if model is None else model
+        if m:
+            cmd += ["--model", m]
         if self.allowed:
             cmd += ["--allowedTools", self.allowed]
         if self.disallowed:
@@ -125,6 +171,58 @@ class Runner:
         if session_id:
             cmd += ["--resume", session_id]
         return cmd
+
+    def probe(self, model, cwd=None, timeout=90):
+        """用**和桥一模一样的命令行**真跑一句，确认这个模型名在这个端点上可用。
+
+        为什么不能只查名字格式：端点不提供模型枚举（2026-11-09 实测
+        `GET /v1/models` 回 `404 Not support`），名字对不对只有真调一次才知道。
+        切换是人工低频动作 —— 花几秒钟，换"错的模型永远进不了真源"。
+
+        ⚠️ `--setting-sources` 必须带上。少了它，子进程会去读 user 设置里那套
+        凭据 —— 探测"成功"了，测的却不是桥真正要用的那把 key（2026-11-08 踩过，
+        白跑了一整轮排查）。
+        """
+        if not model:
+            return False, "模型名是空的"
+        if not self.exe or not os.path.exists(self.exe):
+            return False, f"找不到 claude 可执行文件：{self.exe}"
+        cmd = [self.exe, "-p", "--output-format", "json"]
+        if self.sources:
+            cmd += ["--setting-sources", self.sources]
+        cmd += ["--model", model, "Reply with exactly one word: pong"]
+        t0 = time.time()
+        p = None
+        try:
+            p = subprocess.Popen(cmd, cwd=cwd or None, env=self.build_env(model=model),
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, encoding="utf-8", errors="replace")
+            out, err = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if p is not None:
+                _kill_tree(p.pid)      # 子进程可能还拉着孙进程，别只 kill 自己
+            return False, f"探测超时（{timeout}s 内没返回）"
+        except Exception as e:                     # noqa: BLE001
+            return False, f"探测起不来（{type(e).__name__}: {e}）"
+        dt = time.time() - t0
+
+        ok, detail = False, ""
+        try:
+            d = json.loads((out or "").strip())
+            if isinstance(d, list):
+                d = next((x for x in d if x.get("type") == "result"), {})
+            ok = not d.get("is_error")
+            detail = str(d.get("result") or d.get("error") or "").strip()
+        except Exception:                          # noqa: BLE001  （非 JSON = 失败）
+            detail = ""
+
+        if ok:
+            log.info("[model] 探测通过 %r（%.1fs）", model, dt)
+            return True, f"{dt:.1f}s"
+        why = (_probe_error_text(detail) or _probe_error_text(err)
+               or f"rc={p.returncode}")
+        log.warning("[model] 探测失败 %r（%.1fs）：%s", model, dt, why)
+        return False, why
 
     def kill_current(self):
         """终止当前任务。返回 True **仅当确认进程已退出**。
@@ -168,7 +266,10 @@ class Runner:
           · stderr：必须有人读，否则管道写满会把子进程卡死（这是 `communicate` 替我们做的）；
           · stdin：单独一个线程喂 prompt。prompt 很大时阻塞写会卡住"等退出"那一步。
         """
-        cmd = self.build_cmd(session_id)
+        # 这一轮**实际请求**的模型，先抓一次：命令行和上下文分母必须用同一个值，
+        # 各自去读文件的话，跑的中途被 `/model` 改掉就会互相打架。
+        used_model = self.live_model()
+        cmd = self.build_cmd(session_id, model=used_model)
         log.info("[run] cmd=%s cwd=%s", " ".join(cmd[1:]), cwd)
         t0 = time.time()
         # 审批卡片要靠环境变量把「决策目录 + 发给哪个会话」传给 hook 子进程
@@ -257,7 +358,8 @@ class Runner:
             "denials": data.get("permission_denials") or [],
             # ⚠️ 上下文占用取**逐条 assistant 的 usage**（最后一次调用的 prompt 大小），
             #    不能取 result.modelUsage 的累计值 —— 详见 usage_footer() 的说明。
-            "usage_footer": (usage_footer(data, acc["last_usage"], acc["last_model"])
+            "usage_footer": (usage_footer(data, acc["last_usage"], acc["last_model"],
+                                          want_model=used_model)
                              if self.show_usage else ""),
             "timed_out": timed_out,
             "stopped": stopped and not timed_out,

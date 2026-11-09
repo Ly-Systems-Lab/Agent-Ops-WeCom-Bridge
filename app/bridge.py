@@ -66,6 +66,7 @@ from host import (  # noqa: F401  （宿主基建）
 
 # ---------------- 内核层（已抽层）----------------
 from core.store import Store  # noqa: F401
+from core.model_store import ModelStore  # noqa: F401
 from core.runner import (  # noqa: F401
     Runner, _clip, _kill_tree, _short_path, approval_configured,
     approval_selfcheck, tool_desc,
@@ -123,12 +124,16 @@ class _BridgeCommon(CoreMixin):
                      dump_raw=False, stale_rx_sec=0,
                      progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                      approval_dir=None, approval_wait_sec=120, approval_allow="",
-                     user_labels="", cc_cwd_dm="", approval_dm=True):
+                     user_labels="", cc_cwd_dm="", approval_dm=True,
+                     model_store=None):
         self.allow_users = parse_list(allow_users)
         self.allow_chats = parse_list(allow_chats)
         self.bot_name = bot_name
         self.store = store
         self.runner = runner
+        # 模型的唯一真源（core/model_store.py）。None = 本进程没启用热切换
+        # （老单测这么构造）⇒ `/model` 会如实回"没有启用"，而不是静默不干活。
+        self.model_store = model_store
         self.cc_cwd = cc_cwd
         # 私聊专用目录（`CC_CWD_DM`）。留空 = 和群聊共用 `CC_CWD`。
         self.cc_cwd_dm = cc_cwd_dm or cc_cwd
@@ -202,7 +207,7 @@ class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
                  store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
-                 user_labels="", cc_cwd_dm="", approval_dm=True):
+                 user_labels="", cc_cwd_dm="", approval_dm=True, model_store=None):
         self.bot_id = bot_id
         self.secret = secret
         self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
@@ -211,7 +216,8 @@ class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
                           progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
                           approval_wait_sec=approval_wait_sec,
                           approval_allow=approval_allow, user_labels=user_labels,
-                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                          model_store=model_store)
 
         self.ws = None
         self.subscribed = threading.Event()
@@ -247,7 +253,7 @@ class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
                  user_labels="", cc_cwd_dm="", approval_dm=True,
-                 feishu_chunk_bytes=130000):
+                 model_store=None, feishu_chunk_bytes=130000):
         self.app_id = app_id
         self.app_secret = app_secret
         self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
@@ -256,7 +262,8 @@ class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
                           progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
                           approval_wait_sec=approval_wait_sec,
                           approval_allow=approval_allow, user_labels=user_labels,
-                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                          model_store=model_store)
 
         # 切分粒度按**飞书**的上限来（150 KiB），不照搬企微的 18000 ——
         # 照搬只会把一条 60 KB 的回答无谓地拆成四片。
@@ -298,7 +305,7 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
                  user_labels="", cc_cwd_dm="", approval_dm=True,
-                 slack_chunk_chars=3800, bot_user_id=""):
+                 model_store=None, slack_chunk_chars=3800, bot_user_id=""):
         self.slack_bot_token = bot_token
         self.slack_app_token = app_token
         self.slack_bot_user_id = bot_user_id
@@ -308,7 +315,8 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
                           progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
                           approval_wait_sec=approval_wait_sec,
                           approval_allow=approval_allow, user_labels=user_labels,
-                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                          model_store=model_store)
 
         # 切分粒度按**字符**算（Slack 的上限是字符，不是字节）。
         self.slack_chunk_chars = max(500, int(slack_chunk_chars or 3800))
@@ -537,9 +545,20 @@ def main():
     approval_dm_raw = cfg("CC_APPROVAL_DM", "")
     approval_dm = (approval_dm_raw.strip().lower() not in ("0", "false", "no", "off", "")
                    ) if approval_dm_raw else True
+    # 模型的**唯一真源**：`data/model.json`。`.env` 的 `CC_MODEL` 只当"种子/兜底"
+    # —— 文件不存在时用它的值初始化，文件坏了时退到它（两个文件不会一起坏）。
+    # `model_fn` 让 Runner **每条消息**现读一次，这就是热切换的全部机制。
+    model_store = ModelStore(
+        cfg("CC_MODEL_FILE") or os.path.join(ROOT, "data", "model.json"),
+        seed=cfg("CC_MODEL"),
+        # ⚠️ 这里**不能**用 `parse_list()` —— 它返回 set，`/model 1` 指向哪个
+        # 模型会随进程的哈希顺序变。候选表必须保持用户写的顺序。
+        candidates=[c.strip() for c in (cfg("CC_MODELS") or "").split(",") if c.strip()],
+    )
     runner = Runner(
         exe=cfg("CC_CLAUDE_EXE", os.path.expanduser(r"~\.local\bin\claude.exe")),
         model=cfg("CC_MODEL"),
+        model_fn=model_store.current,
         # 默认 dontAsk：实测（tools/probe_permission_modes.py，2026-10-28）在 headless 下
         # **只有 plan / dontAsk / manual 真的拦住 Bash+Write**；acceptEdits 与 auto 照样执行。
         # dontAsk 比 plan 干净（plan 会往 ~/.claude/plans/ 写计划文件），且拒绝会进
@@ -631,6 +650,7 @@ def main():
             approval_allow=cfg("CC_APPROVAL_ALLOW"),
             user_labels=cfg("SLACK_USER_LABELS"),
             cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+            model_store=model_store,
             slack_chunk_chars=cfg_int("SLACK_CHUNK_CHARS", 3800),
             bot_user_id=slack_bot_user_id)
     elif platform == "feishu":
@@ -649,6 +669,7 @@ def main():
             approval_allow=cfg("CC_APPROVAL_ALLOW"),
             user_labels=cfg("FEISHU_USER_LABELS"),
             cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+            model_store=model_store,
             feishu_chunk_bytes=cfg_int("FEISHU_CHUNK_BYTES", 130000))
     else:
         bridge = Bridge(bot_id, secret, cfg("WECOM_ALLOWED_USERIDS"),
@@ -663,7 +684,8 @@ def main():
                         approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                         approval_allow=cfg("CC_APPROVAL_ALLOW"),
                         user_labels=cfg("WECOM_USER_LABELS"),
-                        cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm)
+                        cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                        model_store=model_store)
 
     if cfg_bool("CC_KEEP_AWAKE", True):
         start_keep_awake()
@@ -672,7 +694,7 @@ def main():
              (f"（私聊={cc_cwd_dm}，审批卡={'开' if approval_dm else '关'}）"
               if cc_cwd_dm != cc_cwd else
               f"（私聊与群聊同目录，审批卡={'开' if approval_dm else '关'}）"),
-             runner.perm_mode, runner.model or "(默认别名)")
+             runner.perm_mode, runner.live_model() or "(默认别名)")
     if runner.perm_mode in ("bypassPermissions", "auto", "acceptEdits"):
         log.warning("[main] 档位=%s ⇒ 模型会**直接执行本机命令、直接改文件**，"
                     "不弹任何确认（实测这三档在 headless 下都不拦 Bash）。"

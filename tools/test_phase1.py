@@ -288,8 +288,10 @@ def test_runner_stream():
                              inject_env={}, show_usage=True)
             self.script = script
 
-        def build_cmd(self, session_id):
-            # 故意不返回 claude 的 argv —— 用一个 python 小程序冒充子进程
+        def build_cmd(self, session_id, model=None):
+            # 故意不返回 claude 的 argv —— 用一个 python 小程序冒充子进程。
+            # `model` 是 2026-11-09 模型热切换加的（Runner.run 会传这一轮实际
+            # 请求的模型），桩这里用不上，但签名要跟上。
             return [sys.executable, "-X", "utf8", "-c", self.script]
 
     work = tempfile.mkdtemp(prefix="ccbridge-fake-")

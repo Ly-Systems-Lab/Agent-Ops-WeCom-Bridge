@@ -67,7 +67,31 @@ def chunk_md(text, limit_bytes=18000, reserve=24):
     return chunks or [""]
 
 
-def usage_footer(data, last_usage=None, last_model=None):
+def _model_entry(mu, name):
+    """在 `modelUsage` 里找 `name` 那一项。找不到返回 None。
+
+    三种匹配"越具体越优先"：精确 → 忽略大小写 → 前缀（取**最长**的那个）。
+    取最长是有原因的：换过模型的会话里 `mu` 会同时有
+    `...-1017`（窗口 200k）和 `...-1017[1m]`（窗口 1M）两项，
+    短名字会**同时匹配**两个 —— 取先命中的那个就必然看运气。
+    """
+    if not name:
+        return None
+    if name in mu:
+        return mu[name]
+    low = name.lower()
+    for k, v in mu.items():
+        if k.lower() == low:
+            return v
+    cands = [(k, v) for k, v in mu.items()
+             if k.startswith(name) or name.startswith(k)]
+    if not cands:
+        return None
+    cands.sort(key=lambda kv: len(kv[0]), reverse=True)
+    return cands[0][1]
+
+
+def usage_footer(data, last_usage=None, last_model=None, want_model=None):
     """上下文占用。
 
     ⚠️ **分子必须取"本轮最后一次 assistant 调用"的 usage，不能取 modelUsage 的
@@ -77,20 +101,21 @@ def usage_footer(data, last_usage=None, last_model=None):
     prompt 只有 45k（窗口 1M）⇒ 用累计值会报 9.4%，真实占用只有 4.5%。
     工具调用再多几轮，累计值就会超过窗口本身，出现 783.8% 这种假读数。
 
+    ⚠️ **分母要按「这一轮请求的模型」找，不能按 assistant 消息里的模型名找**
+    （2026-11-09 实测的坑）：Claude Code 在 assistant 消息里**只报上游模型名**，
+    `[1M]` 别名会被剥掉；而 `modelUsage` 是**会话累计**，换过模型的会话里两个
+    key 同时存在 ⇒ 按基础名精确 `get()` 会命中**历史**那一项，一个 1M 的会话
+    就把窗口显示成 200k。`want_model` 就是为这个加的。
+
     分母仍取 `modelUsage[<model>].contextWindow`（实测存在，不猜）。
     """
     mu = data.get("modelUsage") or {}
     if not mu:
         return ""
-    info = None
-    if last_model:
-        info = mu.get(last_model)
-        if info is None:
-            # 模型名可能带后缀（例如 `[1m]`），按前缀双向匹配一次
-            for name, v in mu.items():
-                if name.startswith(last_model) or last_model.startswith(name):
-                    info = v
-                    break
+    # 顺序：这一轮请求的模型 → assistant 消息报的模型（老调用方）→ 最大窗口
+    info = _model_entry(mu, want_model)
+    if info is None:
+        info = _model_entry(mu, last_model)
     if info is None:
         # 多模型（主模型 + 子任务模型）时取窗口最大的那个，比 next(iter()) 稳
         info = max(mu.values(), key=lambda x: x.get("contextWindow") or 0)

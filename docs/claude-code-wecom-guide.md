@@ -124,9 +124,12 @@ cp .env.example .env
 > ⚠️ **OAuth 登录**（`settings.json` 里没有 `env` 段）在这条路径上**未实测**。
 > 最稳的做法是显式填 `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`。
 
-> ⚠️ **换模型、换 API key / 服务商 / 工作区，改完都要重启桥。**
+> ⚠️ **换 API key / 换服务商 / 换工作区，改完要重启桥。**
 > `.env` 只在进程**启动时**读一次，运行期不会重读 —— 只改文件不重启，
 > 聊天里跑的仍是旧的那套，而且不会有任何报错提示你。
+>
+> ℹ️ **换模型不用重启**：模型是运行时状态（`data/model.json`），桥**每条消息读一次**，
+> 聊天里发 `/model` 改完下一条就生效。机制与实测见 §3.10。
 
 > ⚠️ `.env` **不做变量展开**：写 `%USERPROFILE%\...` 会被当成字面路径。
 > 路径一律写展开后的绝对路径（`where claude` 能给准确位置）。
@@ -262,17 +265,29 @@ Windows 命令行约 32KB 上限，长提示词（贴一段代码/日志）会�
 cache_creation_input_tokens (+ output_tokens)` 才是**本轮结束时的真实上下文**。
 
 ```python
-def usage_footer(data, last_usage=None, last_model=None):
+def _model_entry(mu, name):
+    """精确 → 忽略大小写 → 前缀（取**最长**的那个）。"""
+    if not name:
+        return None
+    if name in mu:
+        return mu[name]
+    low = name.lower()
+    for k, v in mu.items():
+        if k.lower() == low:
+            return v
+    cands = [(k, v) for k, v in mu.items()
+             if k.startswith(name) or name.startswith(k)]
+    if not cands:
+        return None
+    cands.sort(key=lambda kv: len(kv[0]), reverse=True)
+    return cands[0][1]
+
+
+def usage_footer(data, last_usage=None, last_model=None, want_model=None):
     mu = data.get("modelUsage") or {}
     if not mu:
         return ""
-    info = mu.get(last_model) if last_model else None
-    if info is None and last_model:
-        # 模型名可能带后缀（如 `[1m]`），按前缀双向匹配一次
-        for name, v in mu.items():
-            if name.startswith(last_model) or last_model.startswith(name):
-                info = v
-                break
+    info = _model_entry(mu, want_model) or _model_entry(mu, last_model)
     if info is None:
         info = max(mu.values(), key=lambda x: x.get("contextWindow") or 0)
     win = (info or {}).get("contextWindow") or 0
@@ -284,6 +299,15 @@ def usage_footer(data, last_usage=None, last_model=None):
     return f"\n\n> 📊 上下文 {used*100/win:.1f}% " \
            f"({used/1000:.1f}k/{win/1e6:.1f}M)"
 ```
+
+> 🚨 **分母要按「这一轮请求的模型」找，不能按 `assistant` 消息里的模型名找。**
+> Claude Code 在 `assistant` 事件里**只报上游模型名** —— 别名（例如带 `[1M]`
+> 上下文标记的那个）会被剥掉；而 `modelUsage` 是**整个会话的累计**。
+> 于是「换过模型的会话」里两个 key 同时存在：
+> `{"…-1017": 200000, "…-1017[1m]": 1000000}`，按基础名精确 `get()` 会命中
+> **历史**那一项 ⇒ 一个 1M 的会话把窗口显示成 200k。
+> 实测（2026-11-09，同一句话）：修复前 `37.9% (75.7k/200.0k)`，
+> 修复后 `7.8% (77.6k/1.0M)`。所以要把「这一轮传的 `--model`」一起带进来。
 
 好处很实际：**在你决定「要不要 /new」之前，先能看到还剩多少上下文。**
 
@@ -379,6 +403,27 @@ claude -p --output-format stream-json --verbose
 
 ⇒ 正确姿势是**三条线程**：读 stdout、读 stderr、喂 stdin；主线程只负责 `wait()` 和超时。
 别用 `communicate()` —— 它会等进程退出，等于没有流式。
+
+### 3.10 模型热切换：`--resume` 认新的 `--model`，但 `modelUsage` 是**会话累计**
+
+想把「换模型」做成不重启就生效，先确认三件事。实测（2026-11-09）：
+
+| 问题 | 实测答案 |
+|---|---|
+| `--resume` 旧会话时，`--model` 还生效吗？ | **生效**。证据：把一个 `[1M]` 会话改用基础模型 resume，`modelUsage` 里**新出现**了基础模型那一项（`contextWindow=200000`，带着本次调用的 token）—— 此前没有这一项 |
+| `system/init` 里报的 `model` 是实际用的那个吗？ | **不保证**。它报的是你传进去的别名；`assistant` 事件里报的是**上游模型名**（别名被剥掉） |
+| `modelUsage` 是本次调用的还是整个会话的？ | **会话累计**。换过模型的会话里，新旧两个 key 同时存在 |
+
+⇒ 两条结论：
+
+1. **模型名要每条消息现读一次**（桥从 `data/model.json` 读），而且命令行和上下文分母
+   必须用**同一个**值 —— 各自去读文件的话，跑的途中被改掉就会互相打架。
+2. **上下文分母要按「这一轮请求的模型」挑**（§3.4 的 `want_model`）。按 `assistant`
+   事件里的模型名挑，会命中会话历史里那条旧模型的记录。
+
+⚠️ 还有一个容易漏的点：**校验模型名可不可用，只能真调一次**。这类端点不提供模型枚举
+（实测 `GET /v1/models` 回 `404 Not support`），名字对不对没有便宜的判据。
+切换是低频人工动作，花几秒换"错的模型永远进不了真源"，划算。
 
 ---
 
