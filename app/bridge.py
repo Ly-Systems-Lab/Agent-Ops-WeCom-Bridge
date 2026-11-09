@@ -67,6 +67,7 @@ from host import (  # noqa: F401  （宿主基建）
 # ---------------- 内核层（已抽层）----------------
 from core.store import Store  # noqa: F401
 from core.model_store import ModelStore  # noqa: F401
+from core.model_profiles import ModelProfiles  # noqa: F401
 from core.runner import (  # noqa: F401
     Runner, _clip, _kill_tree, _short_path, approval_configured,
     approval_selfcheck, tool_desc,
@@ -134,6 +135,8 @@ class _BridgeCommon(CoreMixin):
         # 模型的唯一真源（core/model_store.py）。None = 本进程没启用热切换
         # （老单测这么构造）⇒ `/model` 会如实回"没有启用"，而不是静默不干活。
         self.model_store = model_store
+        # 哪些工作目录的审批 hook 已经查过（每个目录只查/只报一次）。
+        self._gate_checked = set()
         self.cc_cwd = cc_cwd
         # 私聊专用目录（`CC_CWD_DM`）。留空 = 和群聊共用 `CC_CWD`。
         self.cc_cwd_dm = cc_cwd_dm or cc_cwd
@@ -555,6 +558,10 @@ def main():
         # 模型会随进程的哈希顺序变。候选表必须保持用户写的顺序。
         candidates=[c.strip() for c in (cfg("CC_MODELS") or "").split(",") if c.strip()],
     )
+    # 模型级的端点/上下文/工作目录。**没有这个文件也能跑**（全部走 .env 那一套）。
+    # 有它，同一张候选表里才能同时放"云端"和"本地 Ollama"两种端点。
+    model_profiles = ModelProfiles(
+        cfg("CC_MODEL_PROFILES") or os.path.join(ROOT, "data", "model_profiles.json"))
     runner = Runner(
         exe=cfg("CC_CLAUDE_EXE", os.path.expanduser(r"~\.local\bin\claude.exe")),
         model=cfg("CC_MODEL"),
@@ -570,6 +577,7 @@ def main():
         disallowed=cfg("CC_DISALLOWED_TOOLS", DEFAULT_DISALLOWED),
         inject_env=inject,
         show_usage=cfg_bool("CC_SHOW_USAGE", True),
+        profiles=model_profiles,
     )
     # 单实例保护：自启 + 手动启动/测试同时跑 = 双份回复、双份执行。
     # ⚠️ 互斥量**按平台分开**：两个平台是不同的机器人、不同的长连接，

@@ -12,6 +12,7 @@ import time
 
 from common import APPROVAL_POLL_SEC, PROGRESS_HEARTBEAT_SEC, knob, log
 from core.model_store import valid_model_name
+from core.runner import approval_configured
 from core.text import _looks_like_resume_failure, safe_to_retry_resume
 
 
@@ -119,6 +120,19 @@ class CoreMixin:
         resume 不上。与其让它失败再兜底，不如当场换目录 + 新建会话，并留日志。
         """
         want = self._cwd_for(chat_type)
+        # 模型专用的工作目录优先（`data/model_profiles.json` 的 `cwd`）。
+        # 本地 9B 只有 32K 上下文，而默认目录的项目 CLAUDE.md 可能就有几万字符
+        # ⇒ 不换目录的话，模型光读项目说明就撑爆了。
+        # ⚠️ 切模型同时切目录时，下面那段"路由不一致 ⇒ 换目录并新建会话"会生效：
+        #    这是**对的**，Claude 的会话文件按 cwd 分目录存，换目录本来 resume 不上。
+        prof = getattr(self.runner, "profiles", None)
+        if prof is not None:
+            try:
+                cur_model = self.runner.live_model() \
+                    if hasattr(self.runner, "live_model") else ""
+            except Exception:                      # noqa: BLE001
+                cur_model = ""
+            want = prof.cwd_for(cur_model) or want
         session_id, cwd = self.store.get_session(chatid, userid, want)
         if cwd != want:
             log.warning("[job] cwd 路由与记录不一致（%s → %s），换目录并新建会话",
@@ -286,7 +300,13 @@ class CoreMixin:
         if probe is None:
             return ("❌ 这个 Runner 不支持探测（老版本或测试桩）。\n\n"
                     "> 为了不把没验证过的值写进真源，这次切换已拒绝。")
-        ok, detail = probe(name, cwd=self.cc_cwd)
+        # 探测也要在**这个模型自己的目录**里跑：本地模型的项目说明和云端不是同一份，
+        # 在别的目录探测通过，不代表真正跑的时候能起来。
+        probe_cwd = self.cc_cwd
+        prof = getattr(self.runner, "profiles", None)
+        if prof is not None:
+            probe_cwd = prof.cwd_for(name) or probe_cwd
+        ok, detail = probe(name, cwd=probe_cwd)
         if not ok:
             return (f"❌ `{name}` **不可用**：{detail}\n\n"
                     f"> 当前模型没变，仍是 `{cur or '（未设置）'}`。\n"
@@ -311,10 +331,14 @@ class CoreMixin:
             lines.append(f"> ⚠️ 真源文件有问题：{snap['file_error']}（已用兜底值）")
         lines.append("")
         cands = snap["candidates"]
+        prof = getattr(self.runner, "profiles", None)
         if cands:
             lines.append("**可选**（来自 `.env` 的 `CC_MODELS`）：")
             for i, c in enumerate(cands, 1):
-                lines.append(f"{i}. `{c}`" + ("  ← 当前" if c == snap["current"] else ""))
+                label = prof.label_for(c) if prof is not None else ""
+                lines.append(f"{i}. `{c}`"
+                             + (f"  —— {label}" if label else "")
+                             + ("  ← 当前" if c == snap["current"] else ""))
             lines.append("")
             lines.append("发 `/model <编号>` 或 `/model <名字>` 切换；"
                          "也可以直接发任意模型名（会先探测一次）。")
@@ -405,6 +429,40 @@ class CoreMixin:
         if self.approval_allow:
             e["CC_APPROVAL_ALLOW"] = self.approval_allow
         return e
+
+
+    def _check_gate(self, cwd):
+        """这一轮会注入 `CC_APPROVAL_DIR` 时，确认**这个目录**真的注册了 hook。
+
+        ⚠️ 为什么必须按目录查（2026-11-09 实测踩到）：模型可以带自己的 cwd
+        （`data/model_profiles.json` 的 `cwd`），而 hook 是挂在
+        `<cwd>/.claude/settings.json` 里的。启动时只检查了 `CC_CWD` ——
+        切到别的目录后就可能"注入了 CC_APPROVAL_DIR、但没人读"，
+        **审批静默失效，日志里一片安静**。
+        那次的具体形态：某个工作目录的 hook 命令写成了反斜杠路径，被 bash 吃掉 ⇒
+        命令起不来 ⇒ harness 按放行处理 ⇒ 工具直接执行了。
+        """
+        if not self.approval_dir:
+            return
+        checked = getattr(self, "_gate_checked", None)
+        if checked is None:
+            checked = self._gate_checked = set()
+        key = os.path.normcase(os.path.abspath(cwd or "."))
+        if key in checked:
+            return
+        checked.add(key)
+        try:
+            ok, why = approval_configured(cwd, getattr(self.runner, "sources", ""))
+        except Exception as e:                     # noqa: BLE001
+            log.error("[approval] 检查 %s 的 hook 失败：%s: %s", cwd, type(e).__name__, e)
+            return
+        if ok:
+            log.info("[approval] %s 的审批 hook 检查通过（%s）", cwd, why)
+        else:
+            log.error("[approval] ⚠️ %s **没有可用的审批 hook**：%s"
+                      " ⇒ 这个目录里的工具调用**不会弹卡**"
+                      "（CC_APPROVAL_DIR 已注入，但没人读）。",
+                      cwd, why)
 
 
     def _approval_decide(self, rid, allow, why=""):
@@ -868,6 +926,10 @@ class CoreMixin:
             cb = pump.update if pump else None
             # 审批环境变量只在开了审批时才传（没开就别给 runner 加无关参数）
             aenv = self._approval_env(chatid, chat_type, userid)
+            if aenv:
+                # 注入了审批环境 ≠ 真的会弹卡：hook 是挂在**这个 cwd** 的
+                # settings 里的。没有就当场报出来，别让它静默放行。
+                self._check_gate(cwd)
             kw = {"on_progress": cb}
             if aenv:
                 kw["extra_env"] = aenv

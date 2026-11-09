@@ -425,6 +425,13 @@ claude -p --output-format stream-json --verbose
 （实测 `GET /v1/models` 回 `404 Not support`），名字对不对没有便宜的判据。
 切换是低频人工动作，花几秒换"错的模型永远进不了真源"，划算。
 
+⚠️ **但「换模型」并不总是续用旧会话。** 模型可以带自己的 `cwd`
+（`data/model_profiles.json` 的 `cwd`，例如本地模型用的那个小目录）。
+cwd 一变，旧 `session_id` 就一定 resume 不上（Claude 的会话文件是**按目录存**的），
+桥会当场换目录 + 新建会话 —— 见 `core/bridge_core.py` 的 `_session_for`。
+这是**主动设计**：不同模型的上下文窗口可能差一个数量级，硬续旧会话会**静默**撑爆
+（表现是"模型突然不会用工具了"，不报错）。云端模型之间互切（同一个 cwd）仍然续用原会话。
+
 ---
 
 ## 4. 企业微信长连接协议（实测形状）

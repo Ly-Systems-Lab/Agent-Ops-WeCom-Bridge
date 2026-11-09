@@ -88,12 +88,16 @@ def tool_desc(name, inp):
 
 class Runner:
     def __init__(self, exe, model, perm_mode, sources, timeout,
-                 allowed, disallowed, inject_env, show_usage, model_fn=None):
+                 allowed, disallowed, inject_env, show_usage, model_fn=None,
+                 profiles=None):
         self.exe = exe
         self.model = model
         # 每条消息现取一次（唯一真源是 data/model.json，见 core/model_store.py）。
         # None = 用构造时那个固定值（老单测与 tools/probe_hooks.py 走这条）。
         self.model_fn = model_fn
+        # 每个模型的端点/上下文/工作目录（见 core/model_profiles.py）。
+        # None = 没有这张表 ⇒ 全部模型共用 .env 那一套（老行为）。
+        self.profiles = profiles
         self.perm_mode = perm_mode
         self.sources = sources
         self.timeout = timeout
@@ -116,7 +120,8 @@ class Runner:
         """
         return Runner(self.exe, self.model, self.perm_mode, self.sources,
                       self.timeout, self.allowed, self.disallowed,
-                      self.inject_env, self.show_usage, model_fn=self.model_fn)
+                      self.inject_env, self.show_usage, model_fn=self.model_fn,
+                      profiles=self.profiles)
 
     def live_model(self):
         """这一轮该用的模型。`model_fn` 抛异常时退回构造时的值 ——
@@ -139,12 +144,18 @@ class Runner:
         ⚠️ 热切换时**还要把 `ANTHROPIC_MODEL` 对齐到同一个值**：命令行上的
         `--model` 和注入的 `ANTHROPIC_MODEL` 指向不同模型时，"到底用哪个"
         取决于哪一层先读，说不清。宁可两处写成同一个。
+
+        ⚠️ 顺序不能反：**先铺 `.env`，再铺模型配置表**（`core/model_profiles.py`）。
+           本地 Ollama 要覆盖 `ANTHROPIC_BASE_URL` / `AUTH_TOKEN` / `API_KEY` 和
+           `CLAUDE_CODE_MAX_CONTEXT_TOKENS`；反过来铺就等于没配。
         """
         e = {k: v for k, v in os.environ.items()
              if not (k.upper().startswith("ANTHROPIC") or k.upper().startswith("CLAUDE"))}
         e.update(self.inject_env)
+        m = self.live_model() if model is None else model
+        if self.profiles is not None and m:
+            e.update(self.profiles.env_for(m))
         if self.model_fn is not None:
-            m = self.live_model() if model is None else model
             if m:
                 e["ANTHROPIC_MODEL"] = m
             else:
@@ -506,6 +517,22 @@ class Runner:
             return None
 
 
+_DQ = re.compile(r'"[^"]*"')
+_SQ = re.compile(r"'[^']*'")
+
+
+def _has_unquoted_backslash(cmd):
+    """命令里有没有**没被引号包住**的反斜杠。
+
+    bash 里引号内的反斜杠是字面量（`"C:\\x\\y"` 能用），引号外的会被当转义符。
+    Windows 上 hook 命令交给 bash 执行 —— 这是实测出来的（2026-11-09：
+    `C:\\Users\\...\\python.exe` 未加引号 ⇒ 命令根本没起来 ⇒ 工具**被放行**；
+    换成正斜杠后立刻正常）。
+    """
+    s = _SQ.sub("", _DQ.sub("", cmd or ""))
+    return "\\" in s
+
+
 def approval_configured(cc_cwd, sources):
     """静态检查：**Claude 到底会不会加载这个 hook**。
 
@@ -548,6 +575,17 @@ def approval_configured(cc_cwd, sources):
             for item in (group.get("hooks") or []):
                 cmd = str(item.get("command") or "")
                 if "approval_hook.py" in cmd:
+                    # ④ 命令串**必须能在 bash 里跑起来**（2026-11-09 实测）。
+                    #    Windows 上 hook 命令是由 bash 执行的 ⇒ 未加引号的
+                    #    `C:\x\y` 反斜杠会被当转义符吃掉，变成 `C:xy` ⇒ 命令起不来。
+                    #    而 harness 把"hook 起不来"当**放行** ⇒ 闸门静默失效、
+                    #    日志一片安静。正斜杠在 bash 和 cmd 里都能用，所以要求用它。
+                    if _has_unquoted_backslash(cmd):
+                        return False, (
+                            "hook 命令里有**未加引号的反斜杠路径** —— "
+                            "Windows 上 hook 由 bash 执行，反斜杠会被吃掉 ⇒ 命令起不来 "
+                            "⇒ 被当成放行（静默失效）。请改用正斜杠 /，"
+                            "或把整条路径用双引号包起来")
                     return True, f"{os.path.basename(p)} 已注册 PreToolUse（{cmd[:70]}）"
     return False, (f"{os.path.basename(found[0][0])} 里没有注册 tools/approval_hook.py 的 "
                    f"PreToolUse hook")
