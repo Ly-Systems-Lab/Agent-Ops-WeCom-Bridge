@@ -37,8 +37,98 @@ dws <path> --jq '<表达式>'              # 精确取值，省 token
 官方要求 Agent 调用时**必须**带 `--yes`，它会**跳过 CLI 自身的交互确认**
 ⇒ 对本项目来说，**审批闸门就是唯一那道闸**。所以：
 
-- `dws` 的任何命令**一律弹卡**，不设"读直放"的例外（直到命令级白名单落地）；
-- 卡面必须带执行身份（见下）。
+- 会改数据的命令**一律弹卡**，卡面写明执行身份和弹卡理由；
+- 纯读命令直放（下一节），但它同样受三道本地护栏约束。
+
+### 2.1 只读白名单：哪些命令不弹卡
+
+**判据只有一条：这条命令会不会改数据？** 三个来源**同时**成立才直放：
+
+| 来源 | 内容 |
+|---|---|
+| **官方契约** | `dws schema --all --compact` 里 `effect=read` 且 `confirmation=not_required` |
+| **本地护栏** | 含命令替换 `$()` / 反引号（**双引号里也算**）、重定向、后台 `&`、环境变量前缀、管道喂给非过滤器 ⇒ 按写处理；`&&` `;` `\|` 逐段判，**每一段**都得过 |
+| **人工标注** | 不在「敏感读」清单里（见 2.2） |
+
+**表外一律按写处理，绝不猜。** 所以 `dws api`（原始 OpenAPI）、`dws auth` /
+`config` / `profile`、`dws event consume` 这些照旧弹卡 —— 前几个压根不在官方表里，
+最后一个是官方标注的 `write`。
+
+官方表共 **1559 条命令，其中 720 条是读**（快照 v1.0.67，2026-11-10）。
+
+<details>
+<summary>按服务分布（直放 / 全部）</summary>
+
+| 域 | 直放 | 全部 | 域 | 直放 | 全部 |
+|---|---|---|---|---|---|
+| `aitable` | 134 | 313 | `mail` | 33 | 56 |
+| `chat` | 85 | 243 | `calendar` | 33 | 49 |
+| `attendance` | 55 | 66 | `sheet` | 31 | 99 |
+| `drive` | 42 | 86 | `dev` | 30 | 75 |
+| `contact` | 36 | 68 | `minutes` | 29 | 75 |
+| `doc` | 34 | 99 | `contract` | 25 | 44 |
+| `oa` | 24 | 38 | `hrbrain` | 22 | 24 |
+| `wiki` | 16 | 37 | `todo` | 15 | 44 |
+| `devapp` | 12 | 25 | `dingtalk-tag` | 12 | 30 |
+| `report` | 10 | 11 | `whiteboard` | 8 | 17 |
+| `aisearch` | 6 | 6 | `agoal` | 5 | 5 |
+| `audit` | 3 | 3 | `aicard` | 3 | 6 |
+| `event` | 3 | 3 | `mcp` | 3 | 4 |
+| `markdown` | 3 | 6 | `devdoc` | 2 | 2 |
+| `ding` | 2 | 7 | `live` | 2 | 2 |
+| `html` | 1 | 4 | `mind` | 1 | 5 |
+| `pat` | 0 | 4 | | | |
+
+</details>
+
+快照在 [`dws_effects.json`](dws_effects.json)，由 `tools/dws_effect_sync.py` 生成，
+**别手改**。每条命令都带一句官方摘要 —— 那就是"为什么它是读"的理由。
+
+升级 `dws` 之后跑一次：
+
+```bash
+python -X utf8 tools/dws_effect_sync.py --check   # 只比对；有漂移就退出码 1 并列出变化
+python -X utf8 tools/dws_effect_sync.py           # 确认无误再重新落盘
+```
+
+⚠️ 看到 `read → write` 要停下来看一眼：那说明某条我们原本直放的命令，
+官方改口说它会写数据了（闸门会自动跟着收紧成弹卡，但要确认不是误判）。
+
+### 2.2 敏感读：官方说 `read`，我们仍然弹卡
+
+这几条读出来的东西**本身就是机密**。它们不会被拒绝，但卡面会写明
+「会读出密钥」，由用户自己判断要不要允许：
+
+| 命令 | 读出来的是什么 |
+|---|---|
+| `dev app credentials get` | 客户端凭证（AppSecret） |
+| `dev liteapp credential` | 轻应用 OAuth 凭证（含 secret 明文） |
+| `devapp +credentials-get` | 开放平台应用凭证 |
+| `dev mcp credential get` | MCP 凭证账号详情 |
+| `dev mcp credential list` | MCP 凭证账号列表 |
+| `dev mcp auth get` | MCP 下游鉴权配置 |
+| `aitable supabase api-key list` | SQL Sheet API Key 元数据 |
+
+清单在 `tools/approval_hook.py` 的 `SENSITIVE_READ`，改一行即可。
+**这不是黑名单** —— 点「允许」照常执行，我们只负责把风险摆到卡面上。
+
+### 2.3 卡面上的「策略」一行
+
+弹卡时会写清为什么被拦，四种口径：
+
+| 卡面 | 含义 |
+|---|---|
+| `写操作（todo +create）· 支持 --dry-run 预演` | 官方标注 `effect=write`；后半句只在官方标了 `dry_run` 时出现 |
+| `表外按写（api /v1.0/…）` | 官方表里没有这条命令，按写处理 |
+| `会读出密钥：客户端凭证（…）` | 见 2.2 |
+| 「含 `$(`（命令替换/重定向）⇒ 按写处理」 | 命中本地护栏 |
+
+卡面说"支持 `--dry-run` 预演"时，可以让 Agent 先带着它跑一遍（那一条本身也不改数据），
+看过预演结果再决定要不要发 —— 闸门**不会**替你自动跑：在用户点头之前先执行一次命令，
+这件事本身就说不通。
+
+**判据（怎么算这条真生效）**：白名单外的命令**仍然弹卡**；点「拒绝」**真的没执行**；
+直放的命令在 `<审批目录>/readonly.log` 里留一行账。
 
 ## 3. Agent Skills
 

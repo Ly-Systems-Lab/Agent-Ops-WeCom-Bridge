@@ -64,6 +64,9 @@ class WeComRenderMixin:
         # 跨平台命令的执行身份（dws → 钉钉 / lark-cli → 飞书）。没有就不加这一行。
         if req.get("exec_identity"):
             rows.append({"keyname": "身份", "value": str(req["exec_identity"])})
+        # 为什么弹这张卡（写操作 / 表外按写 / 会读出密钥 …）。闸门算的，见 approval_hook。
+        if req.get("policy"):
+            rows.append({"keyname": "策略", "value": str(req["policy"])})
         rows += [
             {"keyname": "内容", "value": self._approval_detail(tool, req.get("tool_input"))},
             {"keyname": "会话", "value": _short_path(req.get("cwd") or "", 60) or "—"},

@@ -74,6 +74,8 @@ class FeishuRenderMixin:
         wait = int(self.approval_wait_sec or 120)
         # 跨平台命令的执行身份（dws → 钉钉 / lark-cli → 飞书）。没有就不加这一行。
         ident = (f"- **身份**：{req['exec_identity']}\n" if req.get("exec_identity") else "")
+        # 为什么弹这张卡（写操作 / 表外按写 / 会读出密钥 …）。闸门算的，见 approval_hook。
+        policy = (f"- **策略**：{req['policy']}\n" if req.get("policy") else "")
         return {
             "schema": "2.0",
             "config": {"update_multi": True},
@@ -82,6 +84,7 @@ class FeishuRenderMixin:
                  "content": (f"**需要你确认**\n\n"
                              f"- **工具**：`{tool}`\n"
                              f"{ident}"
+                             f"{policy}"
                              f"- **内容**：{self._approval_detail(tool, req.get('tool_input'))}\n"
                              f"- **会话**：{_short_path(req.get('cwd') or '', 60) or '—'}")},
                 {"tag": "markdown",

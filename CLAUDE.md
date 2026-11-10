@@ -61,9 +61,13 @@ wecom-cli <svc> <method> --schema     # 单个方法的入参/出参
 
 ```bash
 dws <path> --help                      # 命令是否存在、当前接受哪些 flag
-dws schema "<path>" --compact          # 契约视图：参数、约束、风险语义
+dws schema "<path>" --compact          # 契约视图：参数、约束、**安全语义**（effect=read/write）
 dws <path> --dry-run                   # 预览，不执行
 ```
+
+⚠️ **审批闸门按命令判**：`effect=read` 的查询命令**直放、不弹卡**，写命令弹卡，
+表外按写。所以查询类命令可以直接跑 —— 别为了"绕过"去改写法：
+`$(...)`、重定向、`PATH=... dws`、管道喂给非过滤器，都会把它变回"按写处理"。
 
 硬规则：
 

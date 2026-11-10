@@ -81,12 +81,14 @@ class SlackRenderMixin:
         detail = self._approval_detail(tool, req.get("tool_input"))
         # 跨平台命令的执行身份（dws → 钉钉 / lark-cli → 飞书）。没有就不加这一行。
         ident = (f"*身份*：{req['exec_identity']}\n" if req.get("exec_identity") else "")
+        # 为什么弹这张卡（写操作 / 表外按写 / 会读出密钥 …）。闸门算的，见 approval_hook。
+        policy = (f"*策略*：{req['policy']}\n" if req.get("policy") else "")
         return [
             {"type": "header",
              "text": {"type": "plain_text", "text": "需要你确认"}},
             {"type": "section", "text": {"type": "mrkdwn",
-             "text": ("*工具*：`%s`\n%s*内容*：%s\n*会话*：%s"
-                      % (tool, ident, detail,
+             "text": ("*工具*：`%s`\n%s%s*内容*：%s\n*会话*：%s"
+                      % (tool, ident, policy, detail,
                          _short_path(req.get("cwd") or "", 60) or "—"))}},
             {"type": "context", "elements": [{"type": "mrkdwn",
              "text": "_点「允许」才会执行；%d 秒内不点按拒绝处理。_" % wait}]},

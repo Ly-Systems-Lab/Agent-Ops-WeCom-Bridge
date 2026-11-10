@@ -1934,6 +1934,44 @@ def test_exec_identity():
     check("本机命令的审批卡不带身份行", "你的账号" not in dumped)
 
 
+def test_approval_policy_card():
+    """P1-1：闸门算出来的「策略」要真的上卡（三平台）。"""
+    print("\n== 审批卡「策略」行（P1-1）==")
+    from platforms.wecom.render import WeComRenderMixin
+    from platforms.feishu.render import FeishuRenderMixin
+    from platforms.slack.render import SlackRenderMixin
+
+    note = "写操作（todo +create）"
+    req = {"tool_name": "Bash", "id": "r2", "cwd": r"C:\repo", "target": "cid|2|u1",
+           "tool_input": {"command": "dws todo +create --title t"},
+           "policy": note}
+
+    class W(WeComRenderMixin):
+        approval_wait_sec = 120
+
+    class F(FeishuRenderMixin):
+        approval_wait_sec = 120
+
+    class S(SlackRenderMixin):
+        approval_wait_sec = 120
+
+    rows = (W()._approval_card(req).get("horizontal_content_list") or [])
+    check("企微卡面有「策略」一行",
+          any(r.get("keyname") == "策略" and r.get("value") == note for r in rows),
+          repr(rows))
+    check("飞书卡面有「策略」一行",
+          note in json.dumps(F()._approval_card(req), ensure_ascii=False))
+    check("Slack 卡面有「策略」一行",
+          note in json.dumps(S()._approval_card(req), ensure_ascii=False))
+
+    plain = {k: v for k, v in req.items() if k != "policy"}
+    check("没有策略 ⇒ 企微卡面不多这一行",
+          all(r.get("keyname") != "策略"
+              for r in (W()._approval_card(plain).get("horizontal_content_list") or [])))
+    check("没有策略 ⇒ 飞书卡面不多这一行",
+          "策略" not in json.dumps(F()._approval_card(plain), ensure_ascii=False))
+
+
 def main():
     skip_llm = "--skip-llm" in sys.argv
     test_chunk()
@@ -1958,6 +1996,7 @@ def main():
     test_usage_footer()
     test_cwd_and_approval()
     test_exec_identity()
+    test_approval_policy_card()
     if skip_llm:
         print("\n（跳过 runner 真跑）")
     else:

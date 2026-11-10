@@ -636,6 +636,23 @@ def main():
                  " + 私聊" if approval_dm else "；私聊已显式设为全自动",
                  cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                  cfg("CC_APPROVAL_ALLOW") or "(默认 Read,Grep,Glob,TodoWrite)")
+        # 命令级只读白名单（P1-1）到底加载到了没有。
+        # ⚠️ 这行日志是"这次为什么一张卡都没弹"能不能被解释的前提：
+        #    **白名单没加载**和**闸门没跑**，在聊天窗口里看起来一模一样（都没卡）。
+        for label, d in cwd_checks:
+            p = os.path.join(d, "interop", "dws_effects.json")
+            try:
+                with open(p, encoding="utf-8") as f:
+                    data = json.load(f)
+                table = data.get("commands") or {}
+                n = sum(1 for v in table.values()
+                        if v.get("effect") == "read"
+                        and v.get("confirmation") == "not_required")
+                log.info("[approval] %s 只读白名单：%d/%d 条可直放（快照 %s）",
+                         label, n, len(table), data.get("cli_version") or "?")
+            except Exception as e:
+                log.warning("[approval] %s 没读到只读白名单（%s：%s）⇒ 跨平台命令**全部弹卡**"
+                            "（安全，但会更吵）", label, p, e)
         # 打出来：这是两个平台最容易互相踩的地方（见上面那段注释）
         log.info("[approval] 决策目录 = %s（平台 %s 独占）", approval_dir, platform)
     elif approval_dm_raw:
