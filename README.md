@@ -190,7 +190,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | 上下文余量 | 每条回复尾部 `📊 上下文 x% (m/n)`：分母取 `modelUsage.contextWindow`，分子取**本轮最后一次 assistant 调用的 usage**（不是累计值） |
 | **真进度** | 气泡显示「正在跑（12s · 第 3 步）+ 当前工具」；**变化才推**，附 60s 兜底心跳 |
 | **模板卡片** | `/status` = 刷新 / 清空 / 停止。⚠️ 按钮文字**只有 2 个字的余量**：4 个字会被截成「清...」 |
-| **审批卡片** | `Bash`/`Write`/`Edit` 先发「允许 / 拒绝」，点了才执行；只读直放。**仅全自动档位下有效**；开启后群聊 + 私聊默认都挂卡（`CC_APPROVAL_DM=1`） |
+| **审批卡片** | `Bash`/`Write`/`Edit` 先发「允许 / 拒绝」，点了才执行；只读直放。**仅全自动档位下有效**；开启后群聊 + 私聊都挂卡，**免不免卡按发消息的人**（`CC_APPROVAL_AUTO_USERS`） |
 | 常驻 | 登录自启、单实例、看门狗自愈、日志保留 14 天、运行期间不睡眠 |
 | 企业能力 | 邮件 / 文档 / 表格 / 日程 / 会议 / 待办 / 微盘 / 通讯录 / 读 7 天群历史 —— **由官方 `wecom-cli` 提供**，本仓零代码接入 |
 | 设备总线 | MQTT / HTTP 控端侧设备 —— **在数据面那个仓**（[`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub)），不在本仓库 |
@@ -289,8 +289,9 @@ Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机
 | **全自动** | `CC_PERMISSION_MODE=bypassPermissions` | 模型直接在你机器上执行命令、改文件，不弹任何确认 |
 | **逐次询问** | `bypassPermissions` + `CC_APPROVAL=1` | 有副作用的调用（`Bash`/`Write`/`Edit`/`WebFetch`）先发「允许 / 拒绝」卡；只读工具（`Read`/`Grep`/`Glob`/`TodoWrite`）直放 |
 
-**群聊 / 私聊的默认**：审批一旦开启（`CC_APPROVAL=1`），**群聊和私聊都挂卡**
-（`CC_APPROVAL_DM` 默认 1）。私聊全自动是**显式可选项**：设 `CC_APPROVAL_DM=0`。
+**谁要弹卡，按发消息的人分**：审批一旦开启（`CC_APPROVAL=1`），群聊和私聊都会走闸门；
+列进 `CC_APPROVAL_AUTO_USERS` 的 userid 全自动，其余人一律弹卡。
+留空 = 谁都要卡。旧开关 `CC_APPROVAL_DM`（私聊全自动）已废弃。
 工作区也可以分开（`CC_CWD` / `CC_CWD_DM`）—— 完整教程见
 [§6.11](docs/claude-code-wecom-guide.md)。
 
@@ -346,7 +347,7 @@ Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机
   **留空 ⇒ 拒绝启动**；要开放全部必须显式 `WECOM_ALLOW_ANYONE=1`。
 - 想要全自动就把 `CC_PERMISSION_MODE` 改成 `bypassPermissions` —— 那是**一次有意识的选择**。
   ⚠️ 别以为 `acceptEdits` 更安全：实测在 headless 下它**照样执行 Bash**，与全自动无区别。
-- **审批整体默认关（`CC_APPROVAL=0`）**；一旦开启（`CC_APPROVAL=1`），**群聊 + 私聊默认都挂卡**（`CC_APPROVAL_DM=1`），而且**不替代 `dontAsk`**。它的否决权握在
+- **审批整体默认关（`CC_APPROVAL=0`）**；一旦开启（`CC_APPROVAL=1`），群聊 + 私聊都走闸门、**谁能免卡按发消息的人**（`CC_APPROVAL_AUTO_USERS`），而且**不替代 `dontAsk`**。它的否决权握在
   [`tools/approval_hook.py`](tools/approval_hook.py) 自己手里：harness 超时/崩溃一律**放行**，
   所以 hook 自己 120 秒到点主动拒绝，harness 的 300 秒只是兜底。
   开了它但**自检不过就拒绝启动**（不再静默降级成全自动）—— 自检查两件事：Claude 真的会加载

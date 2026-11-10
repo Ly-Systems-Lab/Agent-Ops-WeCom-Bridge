@@ -140,6 +140,139 @@ def test_table():
     check("敏感清单里的命令都存在且官方标 read", not bad, str(bad))
 
 
+def test_cred():
+    print("\n== 凭据硬 deny：路径判定（P1-2）==")
+    home = os.path.expanduser("~")
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Git Bash 把 `$HOME` 展开成 `/c/Users/x` —— 这个写法必须单独认。
+    # 实测踩过：少了这条，`cat /c/Users/x/.dws/token.json` 从字面上与受保护目录毫无关系。
+    msys = "/" + home.replace(":", "").replace("\\", "/")
+    cases = [
+        ("Bash", {"command": "cat ~/.dws/token.json"}, "", True, "波浪号"),
+        ("Bash", {"command": "cat " + msys + "/.dws/token.json"}, "", True,
+         "MSYS 绝对路径（/c/Users/…）"),
+        ("Read", {"file_path": msys + "/.dws/token.json"}, "", True,
+         "Read 收到 MSYS 路径也认"),
+        ("Read", {"file_path": home + "/.dws/token.json"}, "", True,
+         "Windows 绝对路径"),
+        ("Bash", {"command": "ls $HOME/.dws"}, "", True, "$HOME"),
+        ("Bash", {"command": "type %USERPROFILE%\\.dws\\token.json"}, "", True,
+         "%USERPROFILE%"),
+        ("Bash", {"command": "cat data/wecom-cli-cc/credentials.enc"}, repo, True,
+         "本仓凭据（正斜杠）"),
+        ("Bash", {"command": "cat data\\wecom-cli-cc\\credentials.enc"}, repo, True,
+         "本仓凭据（反斜杠）"),
+        ("Read", {"file_path": os.path.join(home, ".dws", "token.json")}, "", True,
+         "Read 直放表里的工具也拦"),
+        ("Read", {"file_path": os.path.join(home, "Desktop", "x", "CLAUDE.md")}, "",
+         False, "普通文件不误伤"),
+        ("Read", {"file_path": os.path.join(home, ".dwsfoo", "x")}, "", False,
+         "名字里带 .dws 但不是一个目录"),
+        ("Read", {"file_path": "../data/wecom-cli-cc/credentials.enc"},
+         os.path.join(repo, "tools"), True, "相对路径 + .."),
+        ("Glob", {"pattern": "~/.dws/*"}, "", True, "Glob 只给 pattern 也拦"),
+        ("Grep", {"pattern": "secret"}, os.path.join(home, ".dws"), True,
+         "搜索根就是存储目录"),
+        ("Grep", {"pattern": "secret", "path": os.path.join(home, ".dws", "audit")},
+         "", True, "搜索根在存储里"),
+        ("Bash", {"command": "dws todo +get-my-tasks"}, "", False, "正常 dws 读不受影响"),
+        ("Bash", {"command": "ls interop/"}, "", False, "普通 ls 不受影响"),
+        ("Read", {"file_path": os.path.join(repo, "interop", "dws_effects.json")}, "",
+         False, "仓库里的 dws_ 文件不误伤"),
+    ]
+    for name, ti, cwd, want, why in cases:
+        got = hook._cred_hit(name, ti, cwd)
+        check(f"{'拦' if want else '放'} · {why}", got == want, str(ti)[:60])
+
+
+def _ev(name, tool_input, cwd=None):
+    d = {"tool_name": name, "tool_input": tool_input, "session_id": "t"}
+    if cwd:
+        d["cwd"] = cwd
+    return json.dumps(d, ensure_ascii=False)
+
+
+def _run_hook(payload, env):
+    return subprocess.run([sys.executable, HOOK], input=payload,
+                          capture_output=True, text=True, encoding="utf-8",
+                          env=env, cwd=ROOT, timeout=30)
+
+
+def _denied(proc):
+    try:
+        d = json.loads(proc.stdout)["hookSpecificOutput"]
+    except Exception:
+        return None
+    return d if d.get("permissionDecision") == "deny" else None
+
+
+def test_cred_e2e():
+    print("\n== 凭据硬 deny：真起 hook 进程 ==")
+    home = os.path.expanduser("~")
+    cred = os.path.join(home, ".dws", "token.json")
+
+    # ① 开了审批：Read 一个凭据文件 ⇒ 直接拒绝，**不产生卡片请求**
+    adir = tempfile.mkdtemp(prefix="approval-cred-")
+    p = _run_hook(_ev("Read", {"file_path": cred}), _env(adir))
+    d = _denied(p)
+    check("Read 凭据 ⇒ 拒绝", d is not None, (p.stdout or p.stderr).strip()[:120])
+    reason = (d or {}).get("permissionDecisionReason") or ""
+    check("拒绝理由就是那一句", reason == hook.CRED_DENY_REASON, reason)
+    check("理由里不含存储名/路径",
+          ".dws" not in reason.lower() and home.lower() not in reason.lower(), reason)
+    check("没有生成审批请求（没给用户一张可点错的卡）",
+          not [n for n in os.listdir(adir) if n.endswith(".req.json")])
+
+    # ② **没开审批**（没有 CC_APPROVAL_DIR）也照样拒绝 —— 这是这条规则的意义所在
+    env2 = os.environ.copy()
+    env2.pop("CC_APPROVAL_DIR", None)
+    env2.pop("CC_APPROVAL_AUTO", None)
+    p2 = _run_hook(_ev("Read", {"file_path": cred}), env2)
+    check("没配审批目录 ⇒ 凭据仍然拒绝", _denied(p2) is not None,
+          (p2.stdout or p2.stderr).strip()[:120])
+
+    # ③ 免卡白名单（CC_APPROVAL_AUTO=1）也绕不过去
+    env3 = _env(tempfile.mkdtemp(prefix="approval-cred-auto-"))
+    env3["CC_APPROVAL_AUTO"] = "1"
+    p3 = _run_hook(_ev("Read", {"file_path": cred}), env3)
+    check("免卡用户 ⇒ 凭据仍然拒绝", _denied(p3) is not None,
+          (p3.stdout or p3.stderr).strip()[:120])
+
+    # ④ Bash 里写出路径也算（cat 本来就要弹卡，但它连卡都不该出）
+    adir4 = tempfile.mkdtemp(prefix="approval-cred-bash-")
+    p4 = _run_hook(_ev("Bash", {"command": "cat ~/.dws/token.json"}), _env(adir4))
+    check("Bash 写路径 ⇒ 拒绝", _denied(p4) is not None,
+          (p4.stdout or p4.stderr).strip()[:120])
+    check("Bash 写路径 ⇒ 也不生成请求",
+          not [n for n in os.listdir(adir4) if n.endswith(".req.json")])
+
+    # ⑤ 普通文件不受影响（别把闸门整体拦死）
+    adir5 = tempfile.mkdtemp(prefix="approval-cred-ok-")
+    p5 = _run_hook(_ev("Read", {"file_path": os.path.join(ROOT, "CLAUDE.md")}),
+                   _env(adir5))
+    check("普通 Read 仍然直放", p5.returncode == 0 and not p5.stdout.strip(),
+          (p5.stdout or "").strip()[:120])
+
+
+def test_auto():
+    print("\n== 免卡白名单（P1-3）：闸门照样跑，只是不弹卡 ==")
+    adir = tempfile.mkdtemp(prefix="approval-auto-")
+    env = _env(adir)
+    env["CC_APPROVAL_AUTO"] = "1"
+    p = _run_hook(_ev("Bash", {"command": "dws todo +create --title t --executors u"}),
+                  env)
+    check("免卡用户跑写命令 ⇒ 放行", p.returncode == 0 and not p.stdout.strip(),
+          (p.stdout or p.stderr).strip()[:120])
+    check("免卡用户跑写命令 ⇒ 不生成卡片",
+          not [n for n in os.listdir(adir) if n.endswith(".req.json")])
+    log = os.path.join(adir, "readonly.log")
+    got = ""
+    if os.path.exists(log):
+        with open(log, encoding="utf-8") as f:
+            got = f.read()
+    check("免卡放行记了账（事后能解释'为什么没弹卡'）", "[auto]" in got, got[:120])
+
+
 def test_doc():
     print("\n== 文档与代码一致 ==")
     with open(DOC, encoding="utf-8") as f:
@@ -147,6 +280,7 @@ def test_doc():
     check("钉钉页有「只读白名单」一节", "只读白名单" in doc)
     missing = [p for p in hook._SENSITIVE_READ if p not in doc]
     check("敏感读逐条写进了文档", not missing, str(missing))
+    check("钉钉页有「凭据存储」一节", "凭据存储" in doc)
 
 
 def _env(adir):
@@ -227,6 +361,9 @@ def main():
     test_dryrun_hint()
     test_sensitive()
     test_table()
+    test_cred()
+    test_cred_e2e()
+    test_auto()
     test_doc()
     test_hook_e2e()
     print("\n" + ("❌ 失败 %d 项：%s" % (len(FAIL), "；".join(FAIL)) if FAIL else "✅ 全部通过"))

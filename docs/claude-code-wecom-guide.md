@@ -167,11 +167,11 @@ cp .env.example .env
 |---|---|---|
 | 只读（开箱默认） | `CC_PERMISSION_MODE=dontAsk` | 两边都不能执行命令，不需要卡片 |
 | 全自动 | `CC_PERMISSION_MODE=bypassPermissions` | 两边都直接执行，不弹卡 |
-| **逐次询问（推荐）** | `bypassPermissions` + `CC_APPROVAL=1` | **默认群聊 + 私聊都挂卡**（`CC_APPROVAL_DM` 默认 1） |
-| 逐次询问 + 私聊全自动（可选） | 同上 + `CC_APPROVAL_DM=0` | 群聊挂卡；私聊全自动 |
+| **逐次询问（推荐）** | `bypassPermissions` + `CC_APPROVAL=1` | **群聊 + 私聊都挂卡**；留空名单 ⇒ 谁都要卡 |
+| 逐次询问 + 部分人全自动（可选） | 同上 + `CC_APPROVAL_AUTO_USERS=<userid,...>` | 名单里的人全自动；其余人挂卡 |
 
-> **默认口径**：开箱是只读（最安全）；一旦打开 `CC_APPROVAL=1`，**群聊和私聊默认都挂卡**。
-> 私聊全自动是**显式可选项**，必须自己写 `CC_APPROVAL_DM=0` —— 不是默认值。
+> **默认口径**：开箱是只读（最安全）；一旦打开 `CC_APPROVAL=1`，群聊和私聊**都走闸门**，
+> 谁能免卡由 `CC_APPROVAL_AUTO_USERS` 按**发消息的人**决定 —— 不是按聊天类型。
 > 工作区怎么分、两种场景怎么配，见 **§6.11**。
 
 ### ⑤ 常驻（可选）
@@ -821,7 +821,7 @@ errcode 40058: body.markdown.content exceed max length 20480
 | 维度 | 配什么 | 决定什么 |
 |---|---|---|
 | **工作区** | `CC_CWD`（群聊）/ `CC_CWD_DM`（私聊） | Agent 在哪个目录干活、加载哪份 `CLAUDE.md` / 项目 memory / 会话 |
-| **信任模式** | `CC_PERMISSION_MODE` + `CC_APPROVAL` + `CC_APPROVAL_DM` | 能不能执行命令、要不要人工点「允许 / 拒绝」 |
+| **信任模式** | `CC_PERMISSION_MODE` + `CC_APPROVAL` + `CC_APPROVAL_AUTO_USERS` | 能不能执行命令、要不要人工点「允许 / 拒绝」、**谁**不用点 |
 
 **一个 session 与一个 cwd 绑定**：换目录 = 换一整套项目上下文，旧会话**不会**跟着过去。
 
@@ -833,8 +833,8 @@ errcode 40058: body.markdown.content exceed max length 20480
 | 👤 私聊（Solo） | 极致效率、连续指令 | **审批卡片（默认）**；也可显式开**全自动（可选）** | 个人开发者、日常高频操作 |
 
 > **默认口径再强调一次**：本项目默认**不是**“私聊免审批”。
-> 只要 `CC_APPROVAL=1`，群聊和私聊**都挂卡**；私聊全自动需要你自己写
-> `CC_APPROVAL_DM=0` —— 这是一次有意识的选择，不是默认行为。
+> 只要 `CC_APPROVAL=1`，群聊和私聊**都走闸门**；谁不用点卡由
+> `CC_APPROVAL_AUTO_USERS`（**按发消息的人**）决定，留空就是谁都要点。
 > 开箱默认仍是**只读**（`dontAsk`）：连命令都不执行，所以也不需要卡片。
 
 #### 🚨 默认工作区：别用桥自己的目录
@@ -897,10 +897,10 @@ CC_CWD_DM=C:\work\my-workspace
 4. `/status` 的「工作区」一行按**当前会话类型**显示：群聊看 `CC_CWD`，私聊看 `CC_CWD_DM`。
 5. 两个目录**各自加载各自的** `CLAUDE.md` / 项目 memory / `.claude/settings.json`。
 
-⚠️ **审批开启时的额外要求**：如果 `CC_APPROVAL=1` 且 `CC_APPROVAL_DM=1`（默认），
-**私聊工作区也必须装好** `.claude/settings.json` + `tools/approval_hook.py`，
-否则桥启动时的两道自检不过，直接拒绝启动（退出码 5）。
-不想在私聊目录装 hook，就走下面的“私聊全自动”——但那是显式选择。
+⚠️ **审批开启时的额外要求**：只要 `CC_APPROVAL=1`，**私聊工作区也必须装好**
+`.claude/settings.json` + `tools/approval_hook.py`，否则桥启动时的两道自检不过，
+直接拒绝启动（退出码 5）。闸门对**所有人**都启（免卡用户也走 hook，只是不弹卡），
+所以没有"某条路上不用装 hook"的例外。
 
 #### 切换信任模式（可选）
 
@@ -908,15 +908,16 @@ CC_CWD_DM=C:\work\my-workspace
 |---|---|---|
 | 只读（开箱默认） | `CC_PERMISSION_MODE=dontAsk` | 命令 / 写文件一律被拒 |
 | 全自动 | `CC_PERMISSION_MODE=bypassPermissions` | 直接执行，不弹确认 |
-| **逐次询问（推荐）** | `bypassPermissions` + `CC_APPROVAL=1` | 群聊 + 私聊都挂卡（`CC_APPROVAL_DM` 默认 1） |
-| 逐次询问 + 私聊全自动 | 同上 + `CC_APPROVAL_DM=0` | 群聊挂卡；私聊全自动 |
+| **逐次询问（推荐）** | `bypassPermissions` + `CC_APPROVAL=1` | 群聊 + 私聊都挂卡；名单留空 ⇒ 谁都要卡 |
+| 逐次询问 + 部分人全自动 | 同上 + `CC_APPROVAL_AUTO_USERS=<userid,...>` | 名单里的人全自动；其余人挂卡 |
 
 - 切换方式永远是 **改 `.env` → 重启桥**；聊天里没有切档指令（防“谁能发消息谁就能改边界”）。
 - 🚨 `CC_APPROVAL` **不替代** `dontAsk`：档位优先，只读档下点了「允许」也不会执行。
-- 🚨 `CC_APPROVAL_DM=1` 只有在 `CC_APPROVAL=1` 时才有意义；`CC_APPROVAL=0` 时整个审批不启用。
-- ⚠️ **私聊全自动的安全前提**：`CC_APPROVAL_DM=0` 只是让桥**不注入** `CC_APPROVAL_DIR`。
-  本项目自带的 hook 在无 env 时立刻放行；如果你给私聊工作区换了别的 hook，
-  它的行为由那个 hook 决定，不保证放行。
+- 🚨 `CC_APPROVAL_AUTO_USERS` 只有在 `CC_APPROVAL=1` 时才有意义；`CC_APPROVAL=0` 时谁都**不**弹卡。
+- ⚠️ **免卡 ≠ 免检**：凭据存储（`~/.dws/`、`~/.lark-cli/`、`data/wecom-cli-cc/`）
+  在 hook 里排在免卡标志**之前**，所以白名单里的人一样读不到令牌。
+- ⚠️ **迁移提示**：旧的 `CC_APPROVAL_DM`（私聊全自动）已废弃，仍能识别但**不再影响行为**。
+  升级后请把它换成 `CC_APPROVAL_AUTO_USERS`，否则之前享受私聊全自动的人会开始收到卡片。
 
 #### 验证清单
 

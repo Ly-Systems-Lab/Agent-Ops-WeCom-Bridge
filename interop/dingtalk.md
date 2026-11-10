@@ -109,7 +109,7 @@ python -X utf8 tools/dws_effect_sync.py           # 确认无误再重新落盘
 | `dev mcp auth get` | MCP 下游鉴权配置 |
 | `aitable supabase api-key list` | SQL Sheet API Key 元数据 |
 
-清单在 `tools/approval_hook.py` 的 `SENSITIVE_READ`，改一行即可。
+清单在 `tools/approval_hook.py` 的 `_SENSITIVE_READ`，改一行即可。
 **这不是黑名单** —— 点「允许」照常执行，我们只负责把风险摆到卡面上。
 
 ### 2.3 卡面上的「策略」一行
@@ -129,6 +129,36 @@ python -X utf8 tools/dws_effect_sync.py           # 确认无误再重新落盘
 
 **判据（怎么算这条真生效）**：白名单外的命令**仍然弹卡**；点「拒绝」**真的没执行**；
 直放的命令在 `<审批目录>/readonly.log` 里留一行账。
+
+### 2.4 凭据存储：一律拒绝，没有卡可点
+
+CLI 的令牌是**它替用户保管**的东西，Agent 没有任何正当理由去读 ——
+所以这一类路径不走"弹卡"，是**直接拒绝**：
+
+| 受保护路径 | 里面是什么 |
+|---|---|
+| `~/.dws/` | `dws` 的登录令牌（`token.json`）、身份、审计日志 |
+| `~/.lark-cli/` | `lark-cli` 的落盘位置（⚠️ 占位：本机还没装，P1-4 接上后按实测修正） |
+| `data/wecom-cli-cc/` | 本仓自己的企微 CLI 凭据（`.encryption_key` + `credentials.enc`） |
+
+三条性质，缺一不可：
+
+1. **不弹卡**——拒绝理由是**一句固定文案**，既不带路径也不带命令原文，
+   不给模型拼出正确路径的线索；
+2. **不看审批开关**——没配 `CC_APPROVAL_DIR` 时也生效（这条规则不需要界面）；
+3. **不看免卡白名单**——免卡用户跳过的是"点一下"，不是"这条不能读"。
+
+覆盖面：`Read` / `Edit` / `Write` / `Grep` / `Glob` 按路径字段判（相对路径按本轮
+cwd 展开，`..` 与符号链接一并解开），`Bash` 按命令原文判 ——
+`~/.dws`、`$HOME/.dws`、`%USERPROFILE%\.dws`、绝对路径、`data/wecom-cli-cc`
+这几种写法都算。清单在 `tools/approval_hook.py` 的 `_protected_roots()`。
+
+⚠️ **残余风险（不假装封死）**：运行时**拼出来**的路径（`chr(126)+'/.dws'`）抓不到。
+但那条命令本身不在只读白名单里，照样会弹卡 ⇒ 保证的是"**不会一声不响地读**"，
+而不是"任何写法都拦得住"。
+
+**判据（怎么算这条真生效）**：`Read` 一个令牌文件 ⇒ 收到拒绝且**没有卡片**；
+把 `CC_APPROVAL_DIR` 去掉再试一次 ⇒ **仍然拒绝**；普通文件照旧直放。
 
 ## 3. Agent Skills
 

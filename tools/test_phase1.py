@@ -1798,11 +1798,11 @@ def test_cwd_and_approval():
         perm_mode = "bypassPermissions"
         timeout = 60
 
-    def mk(approval_dm=True, approval_dir=None):
+    def mk(approval_dir=None, auto_users=""):
         return bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store,
                              FakeRunner(), group, 18000, 20, 0,
                              approval_dir=approval_dir,
-                             cc_cwd_dm=dm, approval_dm=approval_dm)
+                             cc_cwd_dm=dm, approval_auto_users=auto_users)
 
     b = mk()
     check("单聊走 CC_CWD_DM", b._cwd_for(1) == dm)
@@ -1810,7 +1810,7 @@ def test_cwd_and_approval():
     check("字符串 1 也按单聊处理", b._cwd_for("1") == dm)
     check("非法/缺失 chat_type 回落群聊",
           b._cwd_for(None) == group and b._cwd_for("x") == group)
-    check("私聊审批默认开", b.approval_dm is True)
+    check("免卡白名单默认为空（谁都要卡）", b.approval_auto_users == set())
 
     # /status 的默认工作区必须按会话类型取（还没跑过第一轮时也一样）
     check("私聊 /status 默认显示私聊目录",
@@ -1818,17 +1818,22 @@ def test_cwd_and_approval():
     check("群聊 /status 默认显示群聊目录",
           dict(b._status_pairs("g1", 2, "u1"))["工作区"] == group)
 
-    # 审批 env：私聊默认注入；显式设 0 才不注入
-    b_on = mk(approval_dm=True, approval_dir=tmp)
-    check("私聊默认注入审批 env",
-          (b_on._approval_env("u1", 1, "u1") or {}).get("CC_APPROVAL_DIR") == tmp)
-    check("群聊注入审批 env",
-          (b_on._approval_env("g1", 2, "u1") or {}).get("CC_APPROVAL_DIR") == tmp)
-    b_off = mk(approval_dm=False, approval_dir=tmp)
-    check("私聊显式全自动 ⇒ 不注入", b_off._approval_env("u1", 1, "u1") is None)
-    check("私聊全自动不影响群聊",
-          (b_off._approval_env("g1", 2, "u1") or {}).get("CC_APPROVAL_DIR") == tmp)
-    b_no = mk(approval_dm=True, approval_dir="")
+    # 审批 env（P1-3）：闸门**永远注入**（群聊私聊都一样），
+    # 免不免卡由 `CC_APPROVAL_AUTO` 表达，不再靠"注不注入"。
+    b_on = mk(approval_dir=tmp)
+    for tag, cid, ctype in (("私聊", "u1", 1), ("群聊", "g1", 2)):
+        e = b_on._approval_env(cid, ctype, "u1") or {}
+        check(f"{tag}一律注入审批 env", e.get("CC_APPROVAL_DIR") == tmp)
+        check(f"{tag}非白名单用户 ⇒ 没有免卡标志", "CC_APPROVAL_AUTO" not in e)
+    b_auto = mk(approval_dir=tmp, auto_users="u1")
+    for tag, cid, ctype in (("私聊", "u1", 1), ("群聊", "g1", 2)):
+        e = b_auto._approval_env(cid, ctype, "u1") or {}
+        check(f"{tag}白名单用户 ⇒ 带免卡标志", e.get("CC_APPROVAL_AUTO") == "1")
+        check(f"{tag}白名单用户**仍然**注入目录（闸门还在）",
+              e.get("CC_APPROVAL_DIR") == tmp)
+    check("白名单是按人的：别人进来照旧没标志",
+          "CC_APPROVAL_AUTO" not in (b_auto._approval_env("g1", 2, "u2") or {}))
+    b_no = mk(approval_dir="")
     check("审批整体没开 ⇒ 谁都不注入", b_no._approval_env("u1", 1, "u1") is None)
 
     # 路由变化：换目录并清旧 session；同路由则保留

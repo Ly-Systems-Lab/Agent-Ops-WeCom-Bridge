@@ -408,19 +408,20 @@ class CoreMixin:
     def _approval_env(self, chatid, chat_type, userid):
         """这一轮要注入给 claude 子进程的环境变量（hook 靠它找目录 + 找会话）。
 
-        ⚠️ **私聊默认也注入**（`CC_APPROVAL_DM=1`）⇒ 群聊和私聊走同一套弹卡流程。
-        设为 0 才是“私聊全自动”的显式选择：此时不注入 `CC_APPROVAL_DIR`，
-        目标工作区的 hook 若按约定在无 env 时放行，就不会拦人
-        （见 `tools/approval_hook.py` 开头：它是可随仓库发布的空壳）。
-        ⚠️ 只对“无 env 就 fail-open”的 hook 成立；换用别的 hook 时，行为由它决定。
+        **闸门永远在线**（2026-11-10 起，P1-2/P1-3）：只要开了审批，群聊私聊都注入。
+        「这个用户免不免卡」不再靠"注不注入 env"表达，而是一个显式标志
+        `CC_APPROVAL_AUTO=1`。这样拆开的好处，三条都是实打实的：
+
+          · **静态安全规则对所有人生效** —— `tools/approval_hook.py` 在读到这个
+            标志**之前**就先判了凭据存储，所以免卡用户照样读不到令牌；
+          · **配错时退化成"弹卡"，不是"静默全自动"** —— 旧写法（免卡 = 不注入）
+            一旦哪天目录没配上，就变成谁都能直接执行，而且日志里一片安静；
+          · **启动自检能覆盖到免卡用户的 cwd** —— 否则"他那条路的 hook 有没有装上"
+            从来没被检查过。
+
+        `userid` 是**发这条消息的人**，不是机器人自己 —— 白名单按人，不按聊天类型。
         """
         if not self.approval_dir:
-            return None
-        try:
-            single = int(chat_type) == 1
-        except (TypeError, ValueError):
-            single = False
-        if single and not self.approval_dm:
             return None
         e = {
             "CC_APPROVAL_DIR": self.approval_dir,
@@ -429,6 +430,8 @@ class CoreMixin:
         }
         if self.approval_allow:
             e["CC_APPROVAL_ALLOW"] = self.approval_allow
+        if userid and userid in self.approval_auto_users:
+            e["CC_APPROVAL_AUTO"] = "1"
         return e
 
 

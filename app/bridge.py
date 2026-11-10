@@ -8,10 +8,13 @@
 因此私聊天然是独立会话。两者的 `cwd` **可以分开**：群聊走 `CC_CWD`，私聊走
 `CC_CWD_DM`（不设就跟群聊同一个目录），见 `Bridge._cwd_for()`。
 
-群聊与私聊**默认都挂审批卡片**（`CC_APPROVAL_DM` 默认 1）：只要审批整体开着
-（`CC_APPROVAL=1`），两边都会注入审批 env、按同一套流程弹卡。
-私聊全自动是**显式可选项**：设 `CC_APPROVAL_DM=0`，此时私聊不注入审批 env；
-本项目提供的 hook 在无 env 时立刻放行（换用别的 hook 时，行为由那个 hook 决定）。
+**谁弹卡，按发消息的人分，不按聊天类型**（2026-11-10 起）：只要审批整体开着
+（`CC_APPROVAL=1`），群聊私聊**都注入**审批 env；列进 `CC_APPROVAL_AUTO_USERS`
+的 userid 带一个 `CC_APPROVAL_AUTO=1` 标志，hook 见到它就放行、不弹卡，其余人照常弹卡。
+
+为什么不用"不注入 env"来表达免卡（旧 `CC_APPROVAL_DM` 的写法）：那样免卡用户的
+**静态安全规则也会一起失效**（`tools/approval_hook.py` 里的凭据存储硬 deny），
+而且"没配上"会静默退化成"谁都能直接执行"。现在配错只会退化成"弹卡"。
 
 复用自 Pi Hub 的 app/wecom_bot.py（真机跑通），删掉了 MQTT / devctl / 指令词表 / 告警格式化。
 刻意保留的行为（都有踩坑记录，别"顺手简化"）：
@@ -125,7 +128,7 @@ class _BridgeCommon(CoreMixin):
                      dump_raw=False, stale_rx_sec=0,
                      progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                      approval_dir=None, approval_wait_sec=120, approval_allow="",
-                     user_labels="", cc_cwd_dm="", approval_dm=True,
+                     approval_auto_users="", user_labels="", cc_cwd_dm="",
                      model_store=None):
         self.allow_users = parse_list(allow_users)
         self.allow_chats = parse_list(allow_chats)
@@ -140,9 +143,13 @@ class _BridgeCommon(CoreMixin):
         self.cc_cwd = cc_cwd
         # 私聊专用目录（`CC_CWD_DM`）。留空 = 和群聊共用 `CC_CWD`。
         self.cc_cwd_dm = cc_cwd_dm or cc_cwd
-        # 私聊是否也走审批卡片（`CC_APPROVAL_DM`）。默认开 ⇒ 群聊+私聊都挂卡；
-        # 设 0 才是“私聊全自动”的显式选择。
-        self.approval_dm = bool(approval_dm)
+        # 免卡白名单（`CC_APPROVAL_AUTO_USERS`）：**按发消息的人**，不按聊天类型。
+        # 列进来的 userid 不弹卡，其余一律弹卡（群聊、私聊都一样）。
+        # ⚠️ 免卡 ≠ 免检：凭据存储的硬 deny 在 hook 里排在这个标志**之前**，
+        #    所以白名单用户也读不到 `~/.dws` 那一类路径。
+        self.approval_auto_users = (parse_list(approval_auto_users)
+                                    if isinstance(approval_auto_users, str)
+                                    else set(approval_auto_users or ()))
         self.chunk_bytes = chunk_bytes
         self.progress_sec = progress_sec
         # 真进度：有气泡时由 ProgressPump 按"变化时推 + 这个间隔兜底"更新；
@@ -210,7 +217,8 @@ class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
                  store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
-                 user_labels="", cc_cwd_dm="", approval_dm=True, model_store=None):
+                 approval_auto_users="", user_labels="", cc_cwd_dm="",
+                 model_store=None):
         self.bot_id = bot_id
         self.secret = secret
         self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
@@ -219,7 +227,8 @@ class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
                           progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
                           approval_wait_sec=approval_wait_sec,
                           approval_allow=approval_allow, user_labels=user_labels,
-                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                          approval_auto_users=approval_auto_users,
+                          cc_cwd_dm=cc_cwd_dm,
                           model_store=model_store)
 
         self.ws = None
@@ -255,7 +264,7 @@ class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
                  store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
-                 user_labels="", cc_cwd_dm="", approval_dm=True,
+                 approval_auto_users="", user_labels="", cc_cwd_dm="",
                  model_store=None, feishu_chunk_bytes=130000):
         self.app_id = app_id
         self.app_secret = app_secret
@@ -265,7 +274,8 @@ class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
                           progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
                           approval_wait_sec=approval_wait_sec,
                           approval_allow=approval_allow, user_labels=user_labels,
-                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                          approval_auto_users=approval_auto_users,
+                          cc_cwd_dm=cc_cwd_dm,
                           model_store=model_store)
 
         # 切分粒度按**飞书**的上限来（150 KiB），不照搬企微的 18000 ——
@@ -307,7 +317,7 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
                  store, runner, cc_cwd, chunk_bytes, queue_max, progress_sec,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
-                 user_labels="", cc_cwd_dm="", approval_dm=True,
+                 approval_auto_users="", user_labels="", cc_cwd_dm="",
                  model_store=None, slack_chunk_chars=3800, bot_user_id=""):
         self.slack_bot_token = bot_token
         self.slack_app_token = app_token
@@ -318,7 +328,8 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
                           progress_hb_sec=progress_hb_sec, approval_dir=approval_dir,
                           approval_wait_sec=approval_wait_sec,
                           approval_allow=approval_allow, user_labels=user_labels,
-                          cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                          approval_auto_users=approval_auto_users,
+                          cc_cwd_dm=cc_cwd_dm,
                           model_store=model_store)
 
         # 切分粒度按**字符**算（Slack 的上限是字符，不是字节）。
@@ -543,11 +554,17 @@ def main():
         log.error("[main] CC_CWD_DM 指向的目录不存在：%s", cc_cwd_dm)
         log.error("[main] 私聊会路由到这里；建好目录或改掉这个配置再启。")
         return 4
-    # 私聊是否也挂审批卡。默认开：审批一旦启用（CC_APPROVAL=1），群聊和私聊都挂卡。
-    # 设 0 是显式选择“私聊全自动”。
-    approval_dm_raw = cfg("CC_APPROVAL_DM", "")
-    approval_dm = (approval_dm_raw.strip().lower() not in ("0", "false", "no", "off", "")
-                   ) if approval_dm_raw else True
+    # 审批卡**按发消息的人**分，不按聊天类型（2026-11-10，P1-3）：
+    #   列进 `CC_APPROVAL_AUTO_USERS` 的 userid 不弹卡（全自动），其余一律弹卡。
+    #   空 = 谁都要卡（fail-closed 的默认值）。
+    approval_auto_users_raw = cfg("CC_APPROVAL_AUTO_USERS")
+    approval_auto_users = parse_list(approval_auto_users_raw)
+    # 旧开关 `CC_APPROVAL_DM` 已废弃：只用来打一句迁移提示，**不再影响任何行为**。
+    approval_dm_raw = cfg("CC_APPROVAL_DM", "").strip()
+    if approval_dm_raw:
+        log.warning("[approval] `CC_APPROVAL_DM` 已废弃（2026-11-10）—— 它按「聊天类型」"
+                    "分，现在改成按「发消息的人」分。请把它从 .env 里删掉，改用 "
+                    "`CC_APPROVAL_AUTO_USERS=<userid,...>`。这个键现在**不再影响任何行为**。")
     # 模型的**唯一真源**：`data/model.json`。`.env` 的 `CC_MODEL` 只当"种子/兜底"
     # —— 文件不存在时用它的值初始化，文件坏了时退到它（两个文件不会一起坏）。
     # `model_fn` 让 Runner **每条消息**现读一次，这就是热切换的全部机制。
@@ -612,8 +629,10 @@ def main():
         #   ② 运行 —— 这个 hook **跑不跑得起来**（真起一个进程，要求它写出请求）
         # ⚠️ **每个实际会用到审批的 cwd 都要过一遍**：私聊路由到另一个工作区却只检
         # 群聊那个目录，等于给私聊留一道"看起来有、实际不跑"的空闸门。
+        # 闸门现在对**所有**人都启动（免卡用户也走 hook，只是不弹卡），
+        # 所以私聊目录**无条件**一起检 —— 不再有"这条路上没闸门"的盲区。
         cwd_checks = [("群聊", cc_cwd)]
-        if approval_dm and cc_cwd_dm != cc_cwd:
+        if cc_cwd_dm != cc_cwd:
             cwd_checks.append(("私聊", cc_cwd_dm))
         for label, d in cwd_checks:
             ok_cfg, why_cfg = approval_configured(d, runner.sources)
@@ -632,10 +651,29 @@ def main():
                           "（那是一次显式选择，不会有闸门的错觉）。")
                 return 5
             log.info("[approval] %s 自检通过：%s；hook 能写出请求。", label, why_cfg)
-        log.info("[approval] 审批已开启（群聊%s）—— 等待 %ss、只读直放=%s",
-                 " + 私聊" if approval_dm else "；私聊已显式设为全自动",
+        log.info("[approval] 审批已开启 —— 等待 %ss、只读直放=%s",
                  cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                  cfg("CC_APPROVAL_ALLOW") or "(默认 Read,Grep,Glob,TodoWrite)")
+        # 谁免卡 —— 这行必须打出来。"一张卡都没弹"能不能被解释，
+        # 全靠"是预授权"还是"闸门没跑"这两个可能性当场分开。
+        if approval_auto_users:
+            log.info("[approval] 免卡白名单（按发消息的人）：%s",
+                     "、".join(sorted(approval_auto_users)))
+        else:
+            log.info("[approval] 免卡白名单为空 ⇒ 每个人、每条写操作都要点卡")
+        # 免卡名单里混进"本来就不许说话"的人 = 一条永远不会生效的配置，
+        # 将来排查"为什么他还是弹卡"会白绕一圈，所以现在就点出来。
+        # ⚠️ 要拿**三个平台的并集**去比：免卡名单是全局的，而启动时只跑一个平台 ——
+        #    只看当前平台的话，另外两个平台的 id 每次启动都会被误报成"永不生效"
+        #    （实测踩到：同一份 .env 下 Slack / 飞书的 id 天天被点名）。
+        all_allow = set()
+        for _k in ("WECOM_ALLOWED_USERIDS", "FEISHU_ALLOWED_OPENIDS",
+                   "SLACK_ALLOWED_USERIDS"):
+            all_allow |= parse_list(cfg(_k))
+        dead = sorted(approval_auto_users - all_allow) if all_allow else []
+        if dead:
+            log.warning("[approval] 免卡白名单里有 %d 个 userid 不在**任何平台**的"
+                        "入口白名单里，**永远不会生效**：%s", len(dead), "、".join(dead))
         # 命令级只读白名单（P1-1）到底加载到了没有。
         # ⚠️ 这行日志是"这次为什么一张卡都没弹"能不能被解释的前提：
         #    **白名单没加载**和**闸门没跑**，在聊天窗口里看起来一模一样（都没卡）。
@@ -655,10 +693,11 @@ def main():
                             "（安全，但会更吵）", label, p, e)
         # 打出来：这是两个平台最容易互相踩的地方（见上面那段注释）
         log.info("[approval] 决策目录 = %s（平台 %s 独占）", approval_dir, platform)
-    elif approval_dm_raw:
-        # 显式设了 CC_APPROVAL_DM、但审批整体没开 ⇒ 别让用户以为私聊在挂卡。
-        log.warning("[approval] 你显式设了 CC_APPROVAL_DM，但 CC_APPROVAL=0 ⇒ "
-                    "审批整体未启用，群聊和私聊都不会弹卡。")
+    elif approval_auto_users:
+        # 配了免卡名单、但审批整体没开 ⇒ 别让用户以为"名单生效了"。
+        # 没有审批就没有卡片，名单也就没有意义 —— 这种配置最容易被误读成"已启用"。
+        log.warning("[approval] 你设了 CC_APPROVAL_AUTO_USERS，但 CC_APPROVAL=0 ⇒ "
+                    "审批整体未启用，谁都**不会**弹卡（名单也就没有意义）。")
     if platform == "slack":
         bridge = SlackBridge(
             slack_bot_token, slack_app_token,
@@ -674,7 +713,7 @@ def main():
             approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
             approval_allow=cfg("CC_APPROVAL_ALLOW"),
             user_labels=cfg("SLACK_USER_LABELS"),
-            cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+            cc_cwd_dm=cc_cwd_dm, approval_auto_users=approval_auto_users_raw,
             model_store=model_store,
             slack_chunk_chars=cfg_int("SLACK_CHUNK_CHARS", 3800),
             bot_user_id=slack_bot_user_id)
@@ -693,7 +732,7 @@ def main():
             approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
             approval_allow=cfg("CC_APPROVAL_ALLOW"),
             user_labels=cfg("FEISHU_USER_LABELS"),
-            cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+            cc_cwd_dm=cc_cwd_dm, approval_auto_users=approval_auto_users_raw,
             model_store=model_store,
             feishu_chunk_bytes=cfg_int("FEISHU_CHUNK_BYTES", 130000))
     else:
@@ -709,16 +748,14 @@ def main():
                         approval_wait_sec=cfg_int("CC_APPROVAL_WAIT_SEC", 120),
                         approval_allow=cfg("CC_APPROVAL_ALLOW"),
                         user_labels=cfg("WECOM_USER_LABELS"),
-                        cc_cwd_dm=cc_cwd_dm, approval_dm=approval_dm,
+                        cc_cwd_dm=cc_cwd_dm, approval_auto_users=approval_auto_users_raw,
                         model_store=model_store)
 
     if cfg_bool("CC_KEEP_AWAKE", True):
         start_keep_awake()
 
     log.info("[main] cwd=%s%s 档位=%s 模型=%s", cc_cwd,
-             (f"（私聊={cc_cwd_dm}，审批卡={'开' if approval_dm else '关'}）"
-              if cc_cwd_dm != cc_cwd else
-              f"（私聊与群聊同目录，审批卡={'开' if approval_dm else '关'}）"),
+             (f"（私聊={cc_cwd_dm}）" if cc_cwd_dm != cc_cwd else "（私聊与群聊同目录）"),
              runner.perm_mode, runner.live_model() or "(默认别名)")
     if runner.perm_mode in ("bypassPermissions", "auto", "acceptEdits"):
         log.warning("[main] 档位=%s ⇒ 模型会**直接执行本机命令、直接改文件**，"
