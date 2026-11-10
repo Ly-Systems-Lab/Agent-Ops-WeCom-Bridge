@@ -585,6 +585,39 @@ class CoreMixin:
         log.info("[approval] 拒绝 ⇒ 终止本轮任务 killed=%s 状态=%s chat=%s/%s",
                  killed, status, chatid, chat_type)
 
+    def _approval_expire(self):
+        """把**超过等待上限**的请求作废 —— 不管它的 `.req.json` 还在不在。
+
+        🚨 2026-11-11 真机事故（小号私聊连续 4 条请求只回 `.seen`、一张卡都没发）：
+        `/stop` 杀进程树时，那一个 hook 来不及删自己的 `.req.json` ⇒ 文件永远留着
+        ⇒ 下面"文件不见了才忘掉"那条清理**永远不触发** ⇒ 这条记录一直挂着
+        `shown=True / resolved=False` ⇒ `_approval_show_next()` 认为这个会话
+        "已经有一张卡在等点击" ⇒ 之后**所有**同会话请求只排队、永不上屏，
+        用户干等满 120 秒被拒。群里不受影响（键是 (chatid, chat_type)，单聊另算）。
+        而且 `_approval_show_next()` 里那条 `continue` 是**静默**的：日志里一个字都没有。
+
+        判据很硬：hook 最多只等 `CC_APPROVAL_WAIT_SEC` 秒，**过了这个点一定没人再等**。
+        所以"按时间作废"不是启发式，是那条契约的另一半。
+        """
+        ttl = float(self.approval_wait_sec or 120) + 15.0
+        now = time.time()
+        with self._approval_lock:
+            dead = [(rid, dict(v)) for rid, v in self._approvals.items()
+                    if now - (v.get("ts") or 0) > ttl]
+            for rid, _v in dead:
+                self._approvals.pop(rid, None)
+        for rid, v in dead:
+            log.warning(
+                "[approval] 请求超过等待上限（已 %.0f 秒 > %.0f）⇒ 作废 rid=%s"
+                "（shown=%s resolved=%s）—— 这是解除会话占用的唯一出口",
+                now - (v.get("ts") or 0), ttl, rid, v.get("shown"), v.get("resolved"))
+            # 顺手收拾孤儿文件：进程树被强杀时 hook 删不掉自己的 `.req.json`
+            for suffix in (".req.json", ".seen"):
+                try:
+                    os.remove(os.path.join(self.approval_dir, rid + suffix))
+                except OSError:
+                    pass
+
     def _approval_scan_once(self):
         """扫一遍待审批请求。**跑在专用线程上**：发卡片会等平台回执（最多 15s）。"""
         try:
@@ -595,6 +628,8 @@ class CoreMixin:
             log.warning("[approval] 列目录失败: %s", e)
             return
         live = {n[:-len(".req.json")] for n in names if n.endswith(".req.json")}
+        # ⚠️ 必须排在"文件不见了才忘掉"**之前**：孤儿文件的文件永远在，那条路径不触发
+        self._approval_expire()
         with self._approval_lock:
             # hook 退出时会删掉请求文件 ⇒ 过期的直接忘掉（免得点击写进一个没人读的文件）
             for rid in [r for r in self._approvals if r not in live]:
@@ -681,7 +716,25 @@ class CoreMixin:
                              key=lambda kv: kv[1].get("ts") or 0)
         pick = None
         for rid, info in pending:
-            if (info.get("chatid"), info.get("chat_type")) in showing:
+            pair = (info.get("chatid"), info.get("chat_type"))
+            if pair in showing:
+                # 这个会话已经有一张在等点击了。
+                # 🚨 **这一条以前是静默 `continue`** —— 2026-11-11 单聊连续 4 条请求
+                # 全都只写 `.seen`、一张卡都没发，日志里一个字都没有，只能靠猜。
+                # 真因是一个被 `/stop` 杀出来的孤儿请求永远占着这个会话（见
+                # `_approval_expire`）。⇒ 至少说一次，而且要说清是**谁**挡住的。
+                if not info.get("blocked_logged"):
+                    info["blocked_logged"] = True
+                    holder, holder_ts = "?", 0.0
+                    with self._approval_lock:
+                        for r, v in self._approvals.items():
+                            if ((v.get("chatid"), v.get("chat_type")) == pair
+                                    and v.get("shown") and not v.get("resolved")):
+                                holder, holder_ts = r, (v.get("ts") or 0)
+                                break
+                    log.warning("[approval] 排队：rid=%s 被同会话未收口的卡 rid=%s 挡住"
+                                "（那张已占 %.0f 秒）⇒ 本轮不发卡",
+                                rid, holder, max(0.0, time.time() - holder_ts))
                 continue        # 这个会话已经有一张在等点击了
             pick = (rid, info)
             break
@@ -1086,6 +1139,7 @@ class CoreMixin:
 
         # —— 控制指令：**在回调线程里立即处理**，否则 /stop 会排在正在跑的任务后面 ——
         lowered = text.strip().lower()
+
         if lowered in ("/new", "/stop", "/status"):
             self._handle_control(lowered, chatid, chat_type, userid, response_url)
             return

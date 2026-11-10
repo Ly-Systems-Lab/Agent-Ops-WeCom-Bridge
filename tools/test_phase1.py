@@ -625,6 +625,43 @@ def test_approval():
           open(dstop, encoding="utf-8").read().strip() == "deny",
           repr(open(dstop, encoding="utf-8").read()))
 
+    # 🚨 2026-11-11 真机事故：小号私聊连续 4 条请求**只回 `.seen`、一张卡都没发**，
+    #    日志里一个字都没有，用户干等满 120 秒被拒。真因：`/stop` 杀进程树时那个 hook
+    #    来不及删自己的 `.req.json` ⇒ 孤儿请求永远留着 ⇒ "文件不见了才忘掉"那条清理
+    #    永远不触发 ⇒ 记录一直 `shown=True/resolved=False` ⇒ 之后**所有**同会话请求
+    #    只排队、永不上屏（`_approval_show_next` 里那条静默 `continue`）。
+    #    修法有两条，各验一遍：① 超过等待上限就作废；② 排队这件事必须留痕。
+    b.send_card = lambda cid, ct, card, wait=True: (
+        cards.append((cid, card)) or {"sent": True, "errcode": 0, "errmsg": ""})
+    orphan = "ridorpan"
+    with open(os.path.join(ad, orphan + ".req.json"), "w", encoding="utf-8") as f:
+        json.dump({"id": orphan, "tool_name": "Bash", "tool_input": {},
+                   "target": "dm|1|u2"}, f)
+    n0 = len(cards)
+    b._approval_scan_once()
+    check("单聊请求也能发卡（基线）",
+          len(cards) == n0 + 1 and cards[-1][0] == "dm", str(len(cards)))
+    with b._approval_lock:
+        b._approvals[orphan]["ts"] = time.time() - 10   # 还在等待窗口内
+    with open(os.path.join(ad, "ridblocked.req.json"), "w", encoding="utf-8") as f:
+        json.dump({"id": "ridblocked", "tool_name": "Bash", "tool_input": {},
+                   "target": "dm|1|u2"}, f)
+    nb = len(cards)
+    b._approval_scan_once()
+    check("同会话有未收口的卡 ⇒ 新请求只排队、不发卡（复现事故）",
+          len(cards) == nb, str(len(cards)))
+    check("  排队要留痕（不再是静默 continue）",
+          bool((b._approvals.get("ridblocked") or {}).get("blocked_logged")))
+    with b._approval_lock:
+        b._approvals[orphan]["ts"] = time.time() - 10000
+    b._approval_scan_once()
+    check("超过等待上限的请求被作废（`.req.json` 还在也一样）",
+          orphan not in b._approvals)
+    check("  孤儿文件被顺手删掉",
+          not os.path.exists(os.path.join(ad, orphan + ".req.json")))
+    check("  作废之后同会话的新请求能上屏",
+          len(cards) == nb + 1 and cards[-1][0] == "dm", str(len(cards)))
+
     # 关掉审批时不该注入任何环境变量
     b2 = bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store, FakeRunner(),
                        tmp, 18000, 20, 0)
