@@ -72,6 +72,8 @@ class FeishuRenderMixin:
         chatid, chat_type = self._approval_target(req)
         base = {"chatid": chatid, "chat_type": chat_type, "task_id": rid}
         wait = int(self.approval_wait_sec or 120)
+        # 跨平台命令的执行身份（dws → 钉钉 / lark-cli → 飞书）。没有就不加这一行。
+        ident = (f"- **身份**：{req['exec_identity']}\n" if req.get("exec_identity") else "")
         return {
             "schema": "2.0",
             "config": {"update_multi": True},
@@ -79,6 +81,7 @@ class FeishuRenderMixin:
                 {"tag": "markdown",
                  "content": (f"**需要你确认**\n\n"
                              f"- **工具**：`{tool}`\n"
+                             f"{ident}"
                              f"- **内容**：{self._approval_detail(tool, req.get('tool_input'))}\n"
                              f"- **会话**：{_short_path(req.get('cwd') or '', 60) or '—'}")},
                 {"tag": "markdown",

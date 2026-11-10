@@ -60,16 +60,20 @@ class WeComRenderMixin:
         """一张"允许 / 拒绝"按钮卡。`card_action` 恒填（实测不带它 42045）。"""
         tool = req.get("tool_name") or "?"
         rid = req.get("id") or ""
+        rows = [{"keyname": "工具", "value": tool}]
+        # 跨平台命令的执行身份（dws → 钉钉 / lark-cli → 飞书）。没有就不加这一行。
+        if req.get("exec_identity"):
+            rows.append({"keyname": "身份", "value": str(req["exec_identity"])})
+        rows += [
+            {"keyname": "内容", "value": self._approval_detail(tool, req.get("tool_input"))},
+            {"keyname": "会话", "value": _short_path(req.get("cwd") or "", 60) or "—"},
+        ]
         return {
             "card_type": "button_interaction",
             "source": {"desc": "Agent-Ops-WeCom-Bridge"},
             "main_title": {"title": "需要你确认",
                            "desc": f"{tool_desc(tool, req.get('tool_input'))}"},
-            "horizontal_content_list": [
-                {"keyname": "工具", "value": tool},
-                {"keyname": "内容", "value": self._approval_detail(tool, req.get("tool_input"))},
-                {"keyname": "会话", "value": _short_path(req.get("cwd") or "", 60) or "—"},
-            ],
+            "horizontal_content_list": rows,
             # 按钮文字**只能 2 个字**（实测），语义只能放这里
             "sub_title_text": f"点「允许」才会执行；{int(self.approval_wait_sec or 120)} 秒内不点按拒绝处理。",
             "button_list": [

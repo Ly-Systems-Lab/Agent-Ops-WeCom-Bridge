@@ -77,7 +77,7 @@
 | | 官方工作区 CLI | Agent Skills | 执行身份 | 本项目 |
 |---|---|---|---|---|
 | **企业微信** | `wecom-cli` | 官方技能包 | 授权真人（你本人） | ✅ 已装已授权 · [详情](wecom.md) |
-| **钉钉** | `dws` | `dingtalk-*` | 用户 OAuth（你本人） | ⏳ 待实测 · [详情](dingtalk.md) |
+| **钉钉** | `dws` | `dingtalk-*` | 用户 OAuth（你本人） | ✅ 读 + 写已实测 · [详情](dingtalk.md) |
 | **飞书** | `lark-cli` | `lark-*` | 用户 OAuth（可 `--as bot`） | ⏳ 待实测 · [详情](feishu.md) |
 | **Slack** | 暂无对等 CLI | — | — | 只做入口 · [详情](slack.md) |
 

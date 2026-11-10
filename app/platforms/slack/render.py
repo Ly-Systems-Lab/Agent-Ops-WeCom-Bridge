@@ -79,12 +79,15 @@ class SlackRenderMixin:
         base = {"chatid": chatid, "chat_type": chat_type, "task_id": rid}
         wait = int(self.approval_wait_sec or 120)
         detail = self._approval_detail(tool, req.get("tool_input"))
+        # 跨平台命令的执行身份（dws → 钉钉 / lark-cli → 飞书）。没有就不加这一行。
+        ident = (f"*身份*：{req['exec_identity']}\n" if req.get("exec_identity") else "")
         return [
             {"type": "header",
              "text": {"type": "plain_text", "text": "需要你确认"}},
             {"type": "section", "text": {"type": "mrkdwn",
-             "text": ("*工具*：`%s`\n*内容*：%s\n*会话*：%s"
-                      % (tool, detail, _short_path(req.get("cwd") or "", 60) or "—"))}},
+             "text": ("*工具*：`%s`\n%s*内容*：%s\n*会话*：%s"
+                      % (tool, ident, detail,
+                         _short_path(req.get("cwd") or "", 60) or "—"))}},
             {"type": "context", "elements": [{"type": "mrkdwn",
              "text": "_点「允许」才会执行；%d 秒内不点按拒绝处理。_" % wait}]},
             {"type": "actions", "elements": [

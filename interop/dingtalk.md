@@ -1,6 +1,6 @@
 # 钉钉 · 执行面（`dws`）
 
-**状态：⏳ 待实测（本机尚未安装）。以下事实来自官方仓库 README 与 `docs/`（2026-11-10 核对）。**
+**状态：✅ 已接入并实测（2026-11-10）—— 读与写都经本项目审批闸门跑通。**
 
 > 本项目**不写钉钉聊天通道** —— 官方 `dws dev connect` 已覆盖"群 @ → 本机 AI"。
 > 那个取舍写在 [`platforms/dingtalk/`](../platforms/dingtalk/README.md)；
@@ -22,67 +22,108 @@
 
 ## 2. Agent 怎么用
 
-【待实测】官方给出的 Agent 调用模式：
+✅ 已验证（2026-11-10）：
 
 ```bash
 dws <path> --help                      # 命令是否存在、当前二进制接受哪些 flag
 dws schema "<path>" --compact          # Agent 该读的契约视图（正向字段白名单）
-dws contact user search --query "张三" --dry-run
-dws contact user get-self --jq '.result[0].orgEmployeeModel | {name: .orgUserName, userId}'
-dws todo task create --title "..." --executors "<userId>" --yes
+dws <path> --dry-run                   # 预览，不执行
+dws <path> --jq '<表达式>'              # 精确取值，省 token
 ```
+
+实测跑过的命令：`contact user get-self`、`todo +get-my-tasks`、`todo +get`、`todo +create`。
 
 🔴 **`--yes` 是这一页的重点。**
 官方要求 Agent 调用时**必须**带 `--yes`，它会**跳过 CLI 自身的交互确认**
 ⇒ 对本项目来说，**审批闸门就是唯一那道闸**。所以：
 
 - `dws` 的任何命令**一律弹卡**，不设"读直放"的例外（直到命令级白名单落地）；
-- 卡面必须带 `--yes` 这个事实 —— 让人一眼看出"CLI 不会替你确认"。
+- 卡面必须带执行身份（见下）。
 
 ## 3. Agent Skills
 
-【待实测】
+✅ 已验证安装（2026-11-10）：`~/.claude/skills/` 下有 **16 个 `dingtalk-*`**。
 
-```bash
-npx skills add DingTalk-Real-AI/dingtalk-workspace-cli -g
-```
+⚠️ **但桥里的会话看不见它们。** 桥拉起 Claude 时用
+`--setting-sources project,local`（**不含 `user`**，为了不读用户设置里那套凭据），
+而 `~/.claude/skills` 属于 user 源 ⇒ **技能文档不会加载**。
+所以桥的 `CLAUDE.md` 里单独写了 `dws` 的用法，让 Agent 靠 `--help` / `schema` 自己找。
 
-装到 `~/.claude/skills/`（同时链接到 Cursor 等已登记的 Agent home）。
-默认 **multi 模式**：每个产品一个 skill —— `dingtalk-calendar` / `dingtalk-chat` /
-`dingtalk-aitable` / `dingtalk-todo` …
-
-国内网络：用 `dws skill setup`（负 Gitee 回退），或给安装脚本设 `DWS_GITEE_REPO`。
+这不是缺陷 —— 是我们**主动排掉 user 设置**的代价，写在这里免得下一个人当成 bug 去查。
 
 ## 4. 执行身份
 
 **用户 OAuth —— 也就是你本人。** 同事收到的消息是你发的，不是你授权的机器人发的。
 
-前置：企业管理员在**开发者平台 → CLI 访问管理**里开启；没开的话 `dws auth login`
-会引导你向管理员发申请，审批通过后重新登录。
+前置：企业管理员在**开发者平台 → CLI 访问管理**里开启。
+✅ 实测走过一次完整流程：`dws auth login` → 浏览器提示"该组织尚未开启 CLI 数据访问权限"
+→ 页面提交申请 → 管理员通过 → 命令自动继续并登录成功。
+
+**卡面必须写出这件事。** 本项目在审批卡上加了「身份」一行：
+
+```
+身份：钉钉 · 你的账号（不是机器人）
+```
+
+判定只看命令的**第一个词**（`dws` / `dws.cmd` / `lark-cli`），
+`echo dws` 不算、`cd x && dws …` 算。它**只影响显示，不影响放行**。
 
 ## 5. 安装前置
 
-【待实测】
+✅ 实测（2026-11-10）：
 
-- Windows：PowerShell 一行安装脚本，或 `npm install -g dingtalk-workspace-cli`；
-- macOS / Linux：`install.sh`，或 Homebrew；
-- 装完 `dws auth login`（无浏览器环境用 `--device`）。
+| 方式 | 结果 |
+|---|---|
+| npm `dingtalk-workspace-cli` | ✅ 装上 **v1.0.67**（`63a7c49`，构建 2026-11-04） |
+| npm 的 `postinstall` | ⚠️ 被 npm 11 的 `allow-scripts` 拦下，**但 CLI 与 Skills 都正常** —— 真正干活的是平台产物，`install.js` 只做附加配置 |
+| 组织侧 | 需要管理员开「CLI 访问管理」（首次登录会自动引导申请） |
 
 ## 6. 已知差异
 
 - ⚠️ **`dws dev connect --daemon` 不支持 Windows**（官方文档明写：无 `setsid`、无 POSIX 信号）。
-  我们不用这条通道，所以对当前方案无影响 —— 但如果你打算同时用官方那个机器人心智，要知道这一点。
+  我们不用那条通道，所以对当前方案无影响。
 - **Token 加密存储**：PBKDF2（600,000 次迭代 + SHA-256）+ AES-256-GCM，密钥绑设备；
-  Windows 上叠加 DPAPI。**跨设备无法解密** —— 换机器就要重新登录。
-- `--dry-run` 展示调用参数但不执行；`-f table/json/raw` 切换输出格式。
+  Windows 上叠加 DPAPI。**跨设备无法解密** —— 换机器要重新登录。
 - **Schema 与 `--help` 冲突时，官方要求按更保守的安全语义处理** —— 这条我们照抄，闸门同理。
+- `dws todo +get-my-tasks` 的返回里**没有创建时间**；要核"这条是什么时候建的"得用
+  `todo +get --task-id <id>` 取 `createdTime`。
 
-## 7. 状态
+## 7. 实测记录
+
+**读（2026-11-10 14:14:36 → 14:15:51）** —— 企微群，正文「帮我看看钉钉待办里今天有什么？」
+
+| 项 | 数字 |
+|---|---|
+| 审批卡 / 允许 / 拒绝 | **10 / 10 / 0** |
+| 工具调用 / 事件 / 坏行 | 10 / 576 / 0 |
+| 退出 | `rc=0 is_error=False 耗时=74.9s denials=0` |
+| 独立核对 | `dws todo +get-my-tasks` 返回的待办，`createdTime` 比消息**早 8 秒** ⇒ 是用户先建的，这一轮只**读**到了它 |
+
+⚠️ 10 条工具调用 = 10 张卡，人点了 10 次。这是"全部弹卡"的真实代价 ——
+也是命令级白名单（读直放、写弹卡）要解决的第一个问题。
+
+**写（2026-11-10 14:27:08 → 14:27:27）** —— 同一群，让 Agent 建一条带截止时间的待办。
+
+| 项 | 数字 |
+|---|---|
+| 审批卡 / 允许 / 拒绝 | **2 / 2 / 0** |
+| 工具调用 / 事件 | 2 / 66 |
+| 退出 | `rc=0 is_error=False 耗时=18.3s denials=0` |
+| **钉钉侧创建时间** | **14:27:17** —— 落在「卡①允许（14:27:15）之后、卡②（14:27:20）之前」 |
+| **截止时间** | `2026-11-11 16:00` —— 与用户原话「明天下午 4 点」逐字对上 |
+
+**"截止时间对得上"比"任务建出来了"更硬**：它证明模型不只是调通了接口，
+而是把那句自然语言正确翻译成了参数。
+
+## 8. 状态
 
 | 项 | 状态 |
 |---|---|
-| 安装 / 授权 | ⏳ 未做 |
-| Skills 落盘 | ⏳ 未做 |
-| 经本项目闸门执行一条读 | ⏳ 未做 |
-| 经本项目闸门执行一条写 | ⏳ 未做 |
-| 旗舰验收（企微进 → 钉钉出） | ⏳ 未做，判据见 [联邦式中枢 §四](../docs/federation.md) |
+| 安装 / 授权 | ✅ 2026-11-10 |
+| Skills 落盘 | ✅ 16 个（桥内不可见，见 §3） |
+| 经本项目闸门执行一条读 | ✅ 2026-11-10 |
+| 经本项目闸门执行一条写 | ✅ 2026-11-10 |
+| 卡面显示执行身份 | ✅ 用户目视确认 |
+| 旗舰链路（企微进 → 钉钉出） | ✅ 读 + 写各一条 |
+| `--yes` 语义单独验证 | ⏳ 未单独测（由 Agent 自然使用，未做对照） |
+| 事件流 / 数字员工 / 其余服务 | ⏳ 未测 |

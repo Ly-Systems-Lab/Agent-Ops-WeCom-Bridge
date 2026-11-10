@@ -1843,6 +1843,97 @@ def test_cwd_and_approval():
           sid == "sid-group" and cwd == group)
 
 
+def test_exec_identity():
+    """审批卡上的「执行身份」：dws → 钉钉、lark-cli → 飞书。"""
+    print("\n— 执行身份（审批卡面）")
+    from core.exec_identity import describe, platform_of
+    from platforms.wecom.render import WeComRenderMixin
+    from platforms.feishu.render import FeishuRenderMixin
+    from platforms.slack.render import SlackRenderMixin
+
+    def bash(cmd):
+        return {"tool_name": "Bash", "tool_input": {"command": cmd}}
+
+    # ① 判定
+    check("dws ⇒ 钉钉", platform_of("dws todo task list --yes") == "钉钉")
+    check("lark-cli ⇒ 飞书",
+          platform_of("lark-cli calendar +agenda --as user") == "飞书")
+    check("cd 之后接 dws ⇒ 钉钉", platform_of("cd /c/x && dws todo") == "钉钉")
+    check("分号串联 ⇒ 钉钉", platform_of("echo hi; dws todo") == "钉钉")
+    check("echo dws 不算（只看每段第一个词）", platform_of("echo dws") == "")
+    check("本机命令 ⇒ 空", describe(bash("python app/bridge.py")) == "")
+    check("非 Bash 工具 ⇒ 空", describe({"tool_name": "Write", "tool_input": {}}) == "")
+    check("Windows 绝对路径 + 引号 ⇒ 钉钉",
+          platform_of('"C:\\Users\\x\\npm\\dws.cmd" todo list') == "钉钉")
+    check("环境变量前缀被跳过", platform_of("DWS_LANG=zh dws todo") == "钉钉")
+    check("两个平台都有 ⇒ 取第一个",
+          platform_of("dws todo && lark-cli calendar") == "钉钉")
+
+    # ② 三个平台的卡面
+    ident = describe(bash("dws todo task list"))
+    check("文案点明「你的账号」", "你的账号" in ident, repr(ident))
+    req = {"tool_name": "Bash", "id": "r1", "cwd": r"C:\repo", "target": "cid|2|u1",
+           "tool_input": {"command": "dws todo task list"}, "exec_identity": ident}
+
+    class W(WeComRenderMixin):
+        approval_wait_sec = 120
+
+    class F(FeishuRenderMixin):
+        approval_wait_sec = 120
+
+    class S(SlackRenderMixin):
+        approval_wait_sec = 120
+
+    wc = W()._approval_card(req)
+    vals = [r.get("value") for r in (wc.get("horizontal_content_list") or [])]
+    check("企微卡面有「身份」一行", ident in vals, repr(vals))
+    fc = json.dumps(F()._approval_card(req), ensure_ascii=False)
+    check("飞书卡面有「身份」一行", ident in fc)
+    sc = json.dumps(S()._approval_card(req), ensure_ascii=False)
+    check("Slack 卡面有「身份」一行", ident in sc)
+
+    plain = {k: v for k, v in req.items() if k != "exec_identity"}
+    check("没有身份 ⇒ 企微卡面不多这一行",
+          all(r.get("keyname") != "身份"
+              for r in (W()._approval_card(plain).get("horizontal_content_list") or [])))
+
+    # ③ 端到端：桥扫到 dws 请求 → 发出的卡自己带上身份
+    tmp = tempfile.mkdtemp(prefix="ccbridge-ident-")
+    store = bridge.Store(os.path.join(tmp, "ap.db"))
+
+    class FakeRunner:
+        perm_mode = "bypassPermissions"
+        timeout = 600
+
+        def kill_current(self):
+            return True
+
+    ad = os.path.join(tmp, "approvals")
+    os.makedirs(ad, exist_ok=True)
+    b = bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store, FakeRunner(),
+                      tmp, 18000, 20, 0, approval_dir=ad, approval_wait_sec=120)
+    cards = []
+    b.send_card = lambda cid, ct, card, wait=True: (
+        cards.append(card) or {"sent": True, "errcode": 0, "errmsg": ""})
+    with open(os.path.join(ad, "rid9.req.json"), "w", encoding="utf-8") as f:
+        json.dump({"id": "rid9", "tool_name": "Bash", "cwd": r"C:\repo",
+                   "target": "cid|2|u1",
+                   "tool_input": {"command": "dws todo task list --yes"}},
+                  f, ensure_ascii=False)
+    b._approval_scan_once()
+    dumped = json.dumps(cards[0] if cards else {}, ensure_ascii=False)
+    check("桥发出的 dws 审批卡带「钉钉」身份", "钉钉" in dumped and "你的账号" in dumped)
+
+    cards.clear()
+    with open(os.path.join(ad, "rid10.req.json"), "w", encoding="utf-8") as f:
+        json.dump({"id": "rid10", "tool_name": "Bash", "cwd": r"C:\repo",
+                   "target": "cid|2|u1",
+                   "tool_input": {"command": "rm -rf build"}}, f, ensure_ascii=False)
+    b._approval_scan_once()
+    dumped = json.dumps(cards[0] if cards else {}, ensure_ascii=False)
+    check("本机命令的审批卡不带身份行", "你的账号" not in dumped)
+
+
 def main():
     skip_llm = "--skip-llm" in sys.argv
     test_chunk()
@@ -1866,6 +1957,7 @@ def main():
     test_ordering_and_labels()
     test_usage_footer()
     test_cwd_and_approval()
+    test_exec_identity()
     if skip_llm:
         print("\n（跳过 runner 真跑）")
     else:

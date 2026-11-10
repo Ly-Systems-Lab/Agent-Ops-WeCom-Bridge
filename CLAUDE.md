@@ -18,6 +18,7 @@
 5. **杀 Claude 要杀进程树**（`taskkill /PID <pid> /T /F`），只杀父进程会留子进程。
 6. **运行档位由 `.env` 的 `CC_PERMISSION_MODE` 决定**（对外默认 `dontAsk`）。
    改动这个档位属于**重要决策**，必须事前提问 —— 它决定"这台机器交给谁"。
+7. `mqtt-edge-hub/` 只作**只读参考**，不要修改 Pi Hub 仓库。
 
 ## 企业微信能力（wecom-cli）
 
@@ -47,6 +48,31 @@ wecom-cli <svc> <method> --schema     # 单个方法的入参/出参
 - **对外动作**（发消息、发邮件、加文档成员）没有用户明确要求就不做。
 
 ⚠️ `--allowedTools` 只在"会弹确认"的档位下有用；**`dontAsk` 档下加了也照样拒**（2026-10-29 实测）。
+
+## 钉钉能力（dws）
+
+本机装了**官方** `dws`（`dws --version`；`dws auth status` 应回 `authenticated: true`）。
+**和 `wecom-cli` 是同一类东西：Agent 的「手」** —— 文档、表格、待办、审批、日历、会议、邮箱、通讯录。
+
+🔴 **它用的是用户本人的 OAuth**：发出去的消息、改过的表格，同事看到的是**你**，不是机器人。
+所以凡是对外动作（发消息、建待办、改表格、批审批），**没有用户明确要求就不做**。
+
+用法（**以运行时 schema 为准，不照抄技能文档**）：
+
+```bash
+dws <path> --help                      # 命令是否存在、当前接受哪些 flag
+dws schema "<path>" --compact          # 契约视图：参数、约束、风险语义
+dws <path> --dry-run                   # 预览，不执行
+```
+
+硬规则：
+
+- **`--yes` 会跳过 CLI 自身的确认** —— 它等于"不再有人问你第二次"。
+  凡准备带 `--yes` 的命令，**先把整条命令给用户看一眼**再执行。
+- 不确定命令就 `--help` / `schema`，**不要猜参数**。
+- 失败如实转达：`success: false` 不许说成成功。
+- ⚠️ 桥里 `--setting-sources project,local` **不含 user** ⇒ `~/.claude/skills/dingtalk-*`
+  **不会被加载**。要靠上面这几条命令自己找，不要假装看得见技能文档。
 
 ## 别重踩的
 

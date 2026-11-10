@@ -12,6 +12,7 @@ import time
 
 from common import APPROVAL_POLL_SEC, PROGRESS_HEARTBEAT_SEC, knob, log
 from core.model_store import valid_model_name
+from core.exec_identity import describe as _exec_identity
 from core.runner import approval_configured
 from core.text import _looks_like_resume_failure, safe_to_retry_resume
 
@@ -684,7 +685,12 @@ class CoreMixin:
         if pick is None:
             return
         rid, info = pick
-        req = info.get("req") or {}
+        req = dict(info.get("req") or {})
+        # 跨平台命令（dws / lark-cli）以**用户本人**的 OAuth 执行 —— 卡面必须写出来。
+        # 只塞进这次渲染用的副本，不回写 info（点完之后的收口卡保持原样）。
+        ident = _exec_identity(req)
+        if ident:
+            req["exec_identity"] = ident
         with self._approval_lock:
             info["shown"] = True
 
