@@ -65,6 +65,14 @@ dws schema "<path>" --compact          # 契约视图：参数、约束、**安�
 dws <path> --dry-run                   # 预览，不执行
 ```
 
+**聊天类能力**（2026-11-11 实测）：发消息 `chat +messages-send`（`--as user|bot|webhook`）、
+按群名发 `chat +send-to-group`、发可更新卡片 `chat +messages-send-card`、
+建群 `chat +chat-create`（支持 `--dry-run`）、群公告 `chat group notice create|edit|get|list`、
+群管理（改名/成员增删/禁言/退出/解散）。
+🔴 **写命令必须带 `--yes`**：不带直接返回 `confirmation_required`，命令**不会执行**。
+发消息的成功判据是**回执**（`openTaskId` → `chat +messages-query-send-status` →
+`openMessageId`），**不是退出码**。公告的 `edit` 是**整体替换**，改之前先 `list` 读原文。
+
 ⚠️ **审批闸门按命令判**：`effect=read` 的查询命令**直放、不弹卡**，写命令弹卡，
 表外按写。所以查询类命令可以直接跑 —— 别为了"绕过"去改写法：
 `$(...)`、重定向、`PATH=... dws`、管道喂给非过滤器，都会把它变回"按写处理"。

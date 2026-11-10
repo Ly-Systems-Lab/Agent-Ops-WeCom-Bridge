@@ -173,6 +173,41 @@ cwd 内的 `.env` 会被 CC 自己拒掉，cwd 之外的 `.env` 却**读得出�
 **判据（怎么算这条真生效）**：`Read` 一个令牌文件 ⇒ 收到拒绝且**没有卡片**；
 把 `CC_APPROVAL_DIR` 去掉再试一次 ⇒ **仍然拒绝**；普通文件照旧直放。
 
+### 2.5 聊天类能力：发消息 / 建群 / 公告（2026-11-11 实测）
+
+官方把「聊天」整个放在 `chat` 命名空间（**243 条命令，102 条快捷键**）。
+Agent 真正会用到的就这几条：
+
+| 能力 | 命令 | 官方效果 |
+|---|---|---|
+| 发消息（单聊/群聊，`user`/`bot`/`webhook` 三种身份） | `chat +messages-send` | write |
+| 按群名直接发 | `chat +send-to-group` | write |
+| 机器人发群 / 群发 / 批量 | `chat +messages-send-by-bot`、`+broadcast`、`+messages-batch-send-by-bot` | write |
+| 发可更新的卡片 | `chat +messages-send-card` / `+messages-update-card` | write |
+| 建群（成员、群主、内外群、话题群、加机器人） | `chat +chat-create` | write（支持 `--dry-run`） |
+| 群公告 | `chat group notice create` / `edit` / `get` / `list` | write / write / read / read |
+| 群管理 | 改名、头像、成员增删、禁言、群昵称、退出、解散 | write；**解散是 destructive** |
+
+**五条性质**（标 ✅ 的是本轮实测，标 📄 的只来自官方契约 / `--help`，**没有执行过**）：
+
+1. ✅ **`--yes` 是硬性的。** 不带它，非交互环境直接返回
+   `code=3 confirmation_required`（"确认后加 `--yes` 执行"），**命令根本不会发出去**。
+   ⇒ 桥里 `--yes` 只能由 Agent 带，那道弹卡就是唯一的人工确认 —— 这也是为什么
+   写命令**必须**弹卡，而不能"信任模型不会乱发"。
+2. ✅ **发送有回执，判据要落在回执上。** `+messages-send` 返回 `openTaskId`，
+   拿它调 `+messages-query-send-status` 才有 `openMessageId`（之后可 `chat message recall`）。
+   **不要用"命令退出码 0"当成功判据。**
+3. ✅ **公告是整体替换，不是打补丁。** `notice edit` 会把正文整篇换掉；
+   `dataId` 不变，变的只有内容和 `updateTime` ⇒ 编辑前先 `notice list` 把原文读出来。
+4. 📄 **建群是"先解析、后执行"。** `--help` 原文：成员按姓名解析零命中或多命中都会
+   **整体停止**，不会建出半成品群；但**建群后加机器人是非原子的**（失败保留已建群并给恢复上下文）。
+   ⚠️ 本轮**没有真建过群**，这条是文档转述，不是实测结论。
+5. 📄 **destructive 只有两条**：`+chat-dismiss`（解散，不可逆，需群主）和
+   `+chat-remove-bot`。来自官方 `dws schema` 快照的 `effect` 分类，**未执行验证**。
+
+⚠️ **靶子选择**：先在**只有自己一个人的群**里验，别拿真实业务群试。
+发出去的消息**改不了**（只能撤回），公告可以改。
+
 ## 3. Agent Skills
 
 ✅ 已验证安装（2026-11-10）：`~/.claude/skills/` 下有 **16 个 `dingtalk-*`**。
@@ -248,6 +283,17 @@ cwd 内的 `.env` 会被 CC 自己拒掉，cwd 之外的 `.env` 却**读得出�
 **"截止时间对得上"比"任务建出来了"更硬**：它证明模型不只是调通了接口，
 而是把那句自然语言正确翻译成了参数。
 
+**聊天类（2026-11-11 01:59–02:00，本机直连，只有本人的 1 人群）** ——
+这一轮只验 **CLI 能力面**（不经企微闸门，闸门那一轮是下一步）：
+
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| 发消息 | `chat +messages-send --as user --group <id>` | `ok=true`；拿 `openTaskId` 查状态得到 `openMessageId` |
+| 建公告 | `chat group notice create` | `success=true`，返回 `dataId` |
+| 回读 | `chat group notice list` | 正文、创建者、时间都对上 |
+| 改公告 | `chat group notice edit --notice-id <dataId>` | `dataId` 不变，`updateTime` **01:59:44 → 02:00:35**，正文整体替换 |
+| 不带 `--yes` | 同一条发送命令 | `code=3 confirmation_required`，**消息没有发出去** |
+
 ## 8. 状态
 
 | 项 | 状态 |
@@ -258,5 +304,8 @@ cwd 内的 `.env` 会被 CC 自己拒掉，cwd 之外的 `.env` 却**读得出�
 | 经本项目闸门执行一条写 | ✅ 2026-11-10 |
 | 卡面显示执行身份 | ✅ 用户目视确认 |
 | 旗舰链路（企微进 → 钉钉出） | ✅ 读 + 写各一条 |
-| `--yes` 语义单独验证 | ⏳ 未单独测（由 Agent 自然使用，未做对照） |
+| `--yes` 语义单独验证 | ✅ 2026-11-11：不带它 ⇒ `confirmation_required`，命令不发出 |
+| 发消息 / 群公告（CLI 直连） | ✅ 2026-11-11（消息有回执；公告建 + 改 + 回读） |
+| 建群 | ⏳ 只核对过 `--help` 与 effect 分类，**没跑过 `--dry-run`、没真建群** |
+| 经闸门发消息 / 公告（企微 → 钉钉） | ⏳ 下一步 |
 | 事件流 / 数字员工 / 其余服务 | ⏳ 未测 |
