@@ -185,6 +185,47 @@ def test_cred():
         check(f"{'拦' if want else '放'} · {why}", got == want, str(ti)[:60])
 
 
+def test_secret_files():
+    print("\n== 凭据硬 deny：密钥类文件名（2026-11-11 补）==")
+    home = os.path.expanduser("~")
+    repo = ROOT
+    cases = [
+        ("Bash", {"command": "cat .env"}, repo, True, "相对 .env"),
+        # 起因：小号在群聊里让模型"看看 api key"，模型用 awk 读 .env ⇒
+        # 桥弹了卡、用户点了允许，然后被 **CC 自己的** `--disallowedTools` 拒掉，
+        # 模型只能回一句"命令被拒绝了"。这条命令必须**连卡都不出**。
+        ("Bash", {"command": "if [ -f .env ]; then awk '{print}' .env; fi"}, repo,
+         True, "事故里那条命令的形态"),
+        ("Bash", {"command": "cat .env.local"}, repo, True, ".env.local 同样算"),
+        ("Bash", {"command": "cat .env.example"}, repo, False, "公开模板必须放行"),
+        ("Bash", {"command": "cp .env.example .env"}, repo, True, "从模板生成也算命中"),
+        ("Bash", {"command": "find . -name \".env*\""}, repo, False, "只列名字不读内容"),
+        ("Bash", {"command": "cat --env-file=.env x"}, repo, True, "--env-file=.env"),
+        ("Bash", {"command": "printenv PATH"}, repo, False, "environment 不误伤"),
+        ("Bash", {"command": "cat " + os.path.join(home, "Desktop", "x", ".env")}, "",
+         True, "cwd 之外的 .env（CLI 那条规则管不到）"),
+        ("Read", {"file_path": os.path.join(home, "Desktop", "x", ".env")}, "", True,
+         "Read 按路径判"),
+        ("Write", {"file_path": os.path.join(repo, ".env.example")}, "", False,
+         "写模板不拦"),
+        ("Bash", {"command": "cat ~/.ssh/id_rsa"}, "", True, "ssh 私钥"),
+        ("Bash", {"command": "openssl rsa -in a.key"}, repo, True, ".key"),
+        ("Bash", {"command": "cat server.pem"}, repo, True, ".pem"),
+        ("Bash", {"command": "cat ~/.claude/settings.json"}, "", True,
+         "CC 配置（明文 token）"),
+        ("Bash", {"command": "cat ~/.claude.json"}, "", True, "~/.claude.json"),
+        ("Read", {"file_path": os.path.join(home, ".claude", "projects", "x.jsonl")},
+         "", True, "会话记录（跨会话可读 = 泄漏别人的聊天）"),
+        ("Read", {"file_path": os.path.join(repo, ".claude", "settings.json")}, "",
+         False, "项目里的 .claude 不受影响"),
+        ("Read", {"file_path": os.path.join(home, "Desktop", "x", "CLAUDE.md")}, "",
+         False, "普通文件不误伤"),
+    ]
+    for name, ti, cwd, want, why in cases:
+        got = hook._cred_hit(name, ti, cwd)
+        check(f"{'拦' if want else '放'} · {why}", got == want, str(ti)[:60])
+
+
 def _ev(name, tool_input, cwd=None):
     d = {"tool_name": name, "tool_input": tool_input, "session_id": "t"}
     if cwd:
@@ -253,6 +294,16 @@ def test_cred_e2e():
     check("普通 Read 仍然直放", p5.returncode == 0 and not p5.stdout.strip(),
           (p5.stdout or "").strip()[:120])
 
+    # ⑥ `.env` 也走同一条硬 deny —— 2026-11-11 那次"弹卡→允许→命令被拒绝了"的回归
+    adir6 = tempfile.mkdtemp(prefix="approval-cred-env-")
+    p6 = _run_hook(_ev("Bash", {"command": "cat .env"}), _env(adir6))
+    d6 = _denied(p6)
+    check(".env ⇒ 直接拒绝", d6 is not None, (p6.stdout or p6.stderr).strip()[:120])
+    check(".env ⇒ 理由就是那一句",
+          ((d6 or {}).get("permissionDecisionReason") or "") == hook.CRED_DENY_REASON)
+    check(".env ⇒ 不生成审批请求",
+          not [n for n in os.listdir(adir6) if n.endswith(".req.json")])
+
 
 def test_auto():
     print("\n== 免卡白名单（P1-3）：闸门照样跑，只是不弹卡 ==")
@@ -281,6 +332,7 @@ def test_doc():
     missing = [p for p in hook._SENSITIVE_READ if p not in doc]
     check("敏感读逐条写进了文档", not missing, str(missing))
     check("钉钉页有「凭据存储」一节", "凭据存储" in doc)
+    check("钉钉页写了 .env 与私钥", ".env" in doc and "私钥" in doc)
 
 
 def _env(adir):
@@ -362,6 +414,7 @@ def main():
     test_sensitive()
     test_table()
     test_cred()
+    test_secret_files()
     test_cred_e2e()
     test_auto()
     test_doc()

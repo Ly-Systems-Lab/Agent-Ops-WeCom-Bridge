@@ -914,7 +914,8 @@ CC_CWD_DM=C:\work\my-workspace
 - 切换方式永远是 **改 `.env` → 重启桥**；聊天里没有切档指令（防“谁能发消息谁就能改边界”）。
 - 🚨 `CC_APPROVAL` **不替代** `dontAsk`：档位优先，只读档下点了「允许」也不会执行。
 - 🚨 `CC_APPROVAL_AUTO_USERS` 只有在 `CC_APPROVAL=1` 时才有意义；`CC_APPROVAL=0` 时谁都**不**弹卡。
-- ⚠️ **免卡 ≠ 免检**：凭据存储（`~/.dws/`、`~/.lark-cli/`、`data/wecom-cli-cc/`）
+- ⚠️ **免卡 ≠ 免检**：凭据存储（`~/.dws/`、`~/.lark-cli/`、`~/.claude/`、`~/.ssh/`、
+  `data/wecom-cli-cc/`，以及任意目录下的 `.env` / `.env.*` 与私钥文件）
   在 hook 里排在免卡标志**之前**，所以白名单里的人一样读不到令牌。
 - ⚠️ **迁移提示**：旧的 `CC_APPROVAL_DM`（私聊全自动）已废弃，仍能识别但**不再影响行为**。
   升级后请把它换成 `CC_APPROVAL_AUTO_USERS`，否则之前享受私聊全自动的人会开始收到卡片。

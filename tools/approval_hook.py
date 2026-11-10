@@ -131,22 +131,49 @@ _EFFECTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 CRED_DENY_REASON = "这是凭据存储，安全策略禁止访问。"
 
 _HOME_STORES = (".dws", ".lark-cli")          # 用户主目录下的 CLI 数据目录
+# 主目录下**同样是凭据**、但不属于上面两个 CLI 的位置（2026-11-11 补）：
+#   `.claude/`、`.claude.json` —— CC 自己的配置与会话记录，里面是明文 token
+#       和**对话全文**（跨会话可读 ⇒ 等于泄漏别人的聊天）。
+#   `.ssh/` —— 私钥。
+_HOME_SECRETS = (".claude", ".claude.json", ".ssh")
 # 本仓自己的 CLI 凭据。**写成正斜杠**：下面要同时生成 `/` 与 `\` 两种形态去比对，
 # 用 `os.path.join` 的话在 Windows 上只剩反斜杠一种，正斜杠写法就漏了。
 _REPO_STORES = ("data/wecom-cli-cc",)
+# 按**文件名**判的密钥类文件（任何目录下都算）。为什么必须按名字判：
+# 桥给 CC 带的 `--disallowedTools Read(**/.env)` 只管**工作目录内**的文件访问
+# （2026-11-11 实测：cwd 之外的 `.env` 照样被读出来），所以这条底线得由我们兜。
+_ENV_RE = re.compile(r"^\.env(?:\.[A-Za-z0-9_-]+)*$", re.I)
+_ENV_EXEMPT = ".env.example"          # 公开模板，没有密钥，必须放行
+_SECRET_RE = re.compile(r"(?:^.*\.(?:pem|key)$)|(?:^id_rsa(?:\..*)?$)", re.I)
+# 命令原文按"词"切开再看文件名 —— 不做整串包含，否则 `environment`、
+# `.env.example`、`.env*` 这类都会误伤。
+_TOKEN_SPLIT = re.compile(r"[\s\"'`;|&()<>,\[\]]+")
 # 这些字段装的是**路径**；只查它们，不查 `content` / `command` 之类的正文
 # （否则"在文档里写一句 `~/.dws`"也会被拒，那是误伤）。
 _PATH_FIELDS = ("file_path", "notebook_path", "path", "cwd")
 
 
 def _protected_roots():
-    """受保护的目录（绝对路径、已规范化）。每次现算 —— 不缓存，便于测试替换 HOME。"""
+    """受保护的目录/文件（绝对路径、已规范化）。每次现算 —— 不缓存，便于测试替换 HOME。"""
     home = os.path.expanduser("~")
     here = os.path.dirname(os.path.abspath(__file__))
-    roots = [os.path.join(home, n) for n in _HOME_STORES]
+    roots = [os.path.join(home, n) for n in _HOME_STORES + _HOME_SECRETS]
     roots += [os.path.normpath(os.path.join(here, "..", *n.split("/")))
               for n in _REPO_STORES]
     return roots
+
+
+def _is_secret_name(name):
+    """文件名本身就是密钥类（`.env` / `.env.local` / `x.pem` / `id_rsa`）。"""
+    b = str(name or "").strip().strip("\"'")
+    if not b:
+        return False
+    low = b.lower()
+    if low == _ENV_EXEMPT or low.startswith(_ENV_EXEMPT + "."):
+        return False                      # `.env.example` 是公开模板
+    if _ENV_RE.match(b):
+        return True
+    return bool(_SECRET_RE.match(b))
 
 
 def _norm_path(p, base=""):
@@ -179,7 +206,8 @@ def _is_cred_path(p, base=""):
         rn = os.path.normcase(os.path.abspath(r))
         if n == rn or n.startswith(rn + os.sep):
             return True
-    return False
+    # 最后按**文件名**兜一层：`.env` / 私钥放在哪里都不能读（含 cwd 之外）。
+    return _is_secret_name(os.path.basename(n))
 
 
 def _cred_text_hit(cmd):
@@ -205,7 +233,7 @@ def _cred_text_hit(cmd):
     # Git Bash 里 `$HOME` 展开成 `/c/Users/x` —— 这个写法**必须**单独算一条，
     # 否则 `cat /c/Users/x/.dws/token.json` 从字面上看和受保护目录毫不相干。
     msys_home = "/" + home.replace(":", "").replace("\\", "/")
-    for name in _HOME_STORES:
+    for name in _HOME_STORES + _HOME_SECRETS:
         p = os.path.join(home, name)
         sigs += ["~/" + name, "~\\" + name,
                  "$home/" + name, "$home\\" + name,
@@ -216,7 +244,27 @@ def _cred_text_hit(cmd):
     for rel in _REPO_STORES:
         p = os.path.normpath(os.path.join(here, "..", *rel.split("/")))
         sigs += [rel, rel.replace("/", "\\"), p, p.replace("/", "\\")]
-    return any(s.lower() in low for s in sigs)
+    if any(s.lower() in low for s in sigs):
+        return True
+    return _token_secret_hit(low)
+
+
+def _token_secret_hit(low):
+    """命令原文里的**单词**有没有直接指向密钥类文件（`.env` / `x.pem` / `id_rsa`）。
+
+    走"切词 → 取 basename"而不是整串包含：`environment`、`.env.example`、
+    `find -name ".env*"`（只列名字）都不该被拦。
+    `--env-file=.env` 这种带 `=` 的写法会把等号两边都看一遍。
+    """
+    for tok in _TOKEN_SPLIT.split(low):
+        for part in tok.split("="):
+            part = part.strip("\"'")
+            if not part:
+                continue
+            base = part.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+            if _is_secret_name(base):
+                return True
+    return False
 
 
 def _cred_hit(name, tool_input, cwd):
