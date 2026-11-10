@@ -140,7 +140,7 @@ CLI 的令牌是**它替用户保管**的东西，Agent 没有任何正当理由
 | `~/.dws/` | `dws` 的登录令牌（`token.json`）、身份、审计日志 |
 | `~/.lark-cli/` | `lark-cli` 的落盘位置（⚠️ 占位：本机还没装，P1-4 接上后按实测修正） |
 | `data/wecom-cli-cc/` | 本仓自己的企微 CLI 凭据（`.encryption_key` + `credentials.enc`） |
-| `~/.claude/`、`~/.claude.json` | CC 自己的配置与会话记录（明文 token；会话记录里是**对话全文**） |
+| `~/.claude/`、`~/.claude.json` | CC 自己的配置与会话记录（明文 token；会话记录里是**对话全文**）。⚠️ 例外：`projects/*/memory/` 是**笔记目录**，放行 |
 | `~/.ssh/` | 私钥 |
 | 任意目录下的 `.env` / `.env.*` | 环境变量文件（豁免 `.env.example`） |
 | 任意目录下的 `*.pem` / `*.key` / `id_rsa*` | 私钥类文件 |

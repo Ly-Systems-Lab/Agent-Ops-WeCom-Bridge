@@ -218,6 +218,12 @@ def test_secret_files():
          "", True, "会话记录（跨会话可读 = 泄漏别人的聊天）"),
         ("Read", {"file_path": os.path.join(repo, ".claude", "settings.json")}, "",
          False, "项目里的 .claude 不受影响"),
+        ("Read", {"file_path": os.path.join(home, ".claude", "projects", "p", "memory",
+                                            "note.md")}, "", False,
+         "记忆目录要放行（否则写笔记也被掐死）"),
+        ("Write", {"file_path": os.path.join(home, ".claude", "projects", "p", "memory",
+                                             "x", "note.md")}, "", False,
+         "记忆子目录同样放行"),
         ("Read", {"file_path": os.path.join(home, "Desktop", "x", "CLAUDE.md")}, "",
          False, "普通文件不误伤"),
     ]

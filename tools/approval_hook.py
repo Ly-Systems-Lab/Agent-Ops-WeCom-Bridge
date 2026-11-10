@@ -163,6 +163,13 @@ def _protected_roots():
     return roots
 
 
+# `~/.claude/projects/<项目>/memory/` 是**记忆目录**（我们自己的笔记，不是凭据）。
+# 保护 `~/.claude` 时必须把它排除，否则连"写笔记"都会被拒 —— 2026-11-11 实测：
+# 加完规则后第一次写记忆就被自己拦下。
+_MEMORY_DIR_RE = re.compile(
+    r"[\\/]\.claude[\\/]projects[\\/][^\\/]+[\\/]memory(?:[\\/]|$)", re.I)
+
+
 def _is_secret_name(name):
     """文件名本身就是密钥类（`.env` / `.env.local` / `x.pem` / `id_rsa`）。"""
     b = str(name or "").strip().strip("\"'")
@@ -202,6 +209,8 @@ def _is_cred_path(p, base=""):
     n = _norm_path(p, base)
     if not n:
         return False
+    if _MEMORY_DIR_RE.search(n):
+        return False                      # 记忆目录是笔记，不是凭据
     for r in _protected_roots():
         rn = os.path.normcase(os.path.abspath(r))
         if n == rn or n.startswith(rn + os.sep):
