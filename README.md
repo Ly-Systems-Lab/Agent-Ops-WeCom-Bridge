@@ -1,8 +1,8 @@
 # Agent-Ops-WeCom-Bridge
 
-**为企业微信打造的重算力 Agent 控制台与运维网关**
+**为多平台打造的重算力 Agent 控制台与运维网关**
 
-同一份内核已在**飞书**上真机打通 —— **平台是入口，不是身份。**
+同一份内核已在**飞书**与 **Slack** 上真机打通 —— **平台是入口，不是身份。**
 
 > 🔗 **三件套** · [🧠 控制面（本仓）](https://github.com/Ly-Systems-Lab/Agent-Ops-WeCom-Bridge) · [🔌 数据面 · Edge-Hub](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub) · [🔭 总蓝图 · Architecture](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture)
 >
@@ -16,6 +16,10 @@
 > | **本仓** · [`Agent-Ops-WeCom-Bridge`](https://github.com/Ly-Systems-Lab/Agent-Ops-WeCom-Bridge) | 控制面 · 人 ⇄ Agent | 已公开 |
 > | [`Agent-Ops-Edge-Hub`](https://github.com/Ly-Systems-Lab/Agent-Ops-Edge-Hub) | 数据面 · Agent ⇄ 物理世界（MQTT / 端侧设备） | 已公开 |
 > | [`Agent-Ops-Architecture`](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture) | 总蓝图 · 《协同宣言》与全景架构（只有文档，不含代码） | 已公开 |
+>
+> 🔌 **它同时是「联邦式中枢」的插座**：入口可以是企微 / 飞书 / Slack，
+> 执行面可以是本机 / 设备 / 钉钉 / 飞书 —— 官方能力当插件，本项目只做那层闸门。
+> 见下方「**插座与插件**」一节。
 
 ## 🎬 演示
 
@@ -31,18 +35,18 @@
 
 > **人不在电脑前的时候，怎么找到并驱动那台机器上的 Agent。**
 
-企业微信只是跑得最远的那个入口。**同一份内核已经接上了形态很不一样的飞书** ——
-长连接换成官方 SDK，消息模型、卡片回调、字节上限、推送频率全都不一样，
+企业微信只是跑得最远的那个入口。**同一份内核已经接上了形态很不一样的飞书和 Slack** ——
+长连接换成官方 SDK / Socket Mode，消息模型、卡片回调、字节上限、推送频率全都不一样，
 而「交互基准」那五条，一条都没改。
 
-| 平台 | 状态 |
-|---|---|
-| 企业微信 | **参考实现** · 真机验收 + 两次外部 Agent 独立复现 |
-| 飞书 | **真机验收** · 五项交互 + 连续在线 24 小时 + 断网自愈 |
-| Slack | **真机验收** · 单聊 / 频道 / 审批卡 / 线程续接 / 断网自愈 / 24 小时连续运行（进程零重启） |
-| 钉钉 | 能力已对照官方文档核实，**适配器未实现** |
+| 平台 | 作为入口 | 状态 |
+|---|---|---|
+| 企业微信 | ✅ | **参考实现** · 真机验收 + 两次外部 Agent 独立复现 |
+| 飞书 | ✅ | **真机验收** · 五项交互 + 连续在线 24 小时 + 断网自愈 |
+| Slack | ✅ | **真机验收** · 24 小时连续运行（进程零重启） |
+| 钉钉 | — | 官方 `dws` 已覆盖通道层，本项目**只把它当执行面**，不重复造入口 |
 
-👉 想换平台，从 [`platforms/`](platforms/README.md) 开始。
+👉 想换入口，从 [`platforms/`](platforms/README.md) 开始；想把官方 CLI 当"手"接进来，看 [`interop/`](interop/README.md)。
 
 ## 🌌 The Manifesto | 我们的协同宣言
 
@@ -232,6 +236,47 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 ⚠️ **装了官方 CLI 也不等于能用**：默认档位 `dontAsk` 下模型跑不了 `Bash(wecom-cli:*)`
 （实测 `--allowedTools` 也放不进来，2026-10-29）。要用企业能力，得开全自动或「逐次询问」。
 
+## 🔌 插座与插件：一个 Agent，多个入口，多个执行面
+
+**入口**负责"人跟 Agent 说话"，**执行面**负责"事情真正落地"。两者不必是同一家公司。
+
+```text
+在企微说一句话  →  Agent 判断该用哪只手  →  到钉钉查待办 / 到飞书改文档 / 在本机改代码
+                                              ↓
+                                       结果回到企微同一个气泡
+```
+
+**官方能力是插件，我们是插座。** `dws`（钉钉）、`lark-cli`（飞书）、`wecom-cli`（企微）
+已经把"给 Agent 用的结构化命令 + Skills"做完了 —— 我们**直接引用，不包装、不复刻**；
+本项目只补它们没有的那一层：**审批闸门、身份边界、会话与模型的路由**。
+
+| 我们要保证的 | 落在哪 |
+|---|---|
+| 接得进来 | Skills 装到 `~/.claude/skills/`，一次安装，所有入口通用 |
+| 看得见 | 审批卡写清「平台 / 目标 / 动作 / 以谁的身份」 |
+| 拦得住 | 策略表外按写处理；跨平台写操作**默认全部弹卡** |
+| 换得掉 | 内核不认识任何平台 —— 换执行面不改代码 |
+
+接入方法、四个平台的差异、每一步的验收判据：[**`interop/`**](interop/README.md)；
+为什么这么设计：[**联邦式中枢**](docs/federation.md)。
+
+<details>
+<summary><b>展开：为什么不是「再写一条钉钉通道」，也不是「包成 MCP Server」</b></summary>
+
+<br>
+
+- **再写一条通道**：官方 `dws dev connect` 已经覆盖"群 @ → 本机 AI"（多轮、`/new`、白名单、限流）。
+  再写一遍，收益只剩"工具级审批 + 聊天里切模型"两项，维护成本却要自己扛。
+- **包成 MCP Server**：多一层进程、多一套协议。官方 CLI 本身就是结构化命令 + `SKILL.md`，
+  Agent 会 Bash 就能用 —— 包装只会让我们替官方背升级。
+- **直接用官方 CLI**：零适配层，升级跟着官方走，坏了拆掉即可。
+
+⚠️ **身份要说清楚**：`dws` / `lark-cli` 用的是**你本人的 OAuth**。
+Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机器人**。
+这是"借力"的代价，也是它的价值 —— 所以写操作上，闸门必须做实。
+
+</details>
+
 ## 🔐 权限：三种形态，一个开关
 
 **怎么切换：改 `.env`，然后重启桥。** 聊天里**没有**切换指令 ——
@@ -326,6 +371,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | **必须自己实现的 10 个机制**（每条附"不这么做会怎样"） | [`docs/`](docs/claude-code-wecom-guide.md) §6 |
 | 让**另一个 AI Agent** 照着实现 | [`docs/`](docs/claude-code-wecom-guide.md) §8（自包含契约，可整段丢给它） |
 | **换一个聊天平台**（飞书 / 钉钉 / Slack） | [`platforms/`](platforms/README.md)：同一套约定，四个平台各答一遍 |
+| **把官方 CLI 接进来当执行面**（钉钉 `dws` / 飞书 `lark-cli`） | [`interop/`](interop/README.md)：四个平台的差异 + 接入六步 + 验收判据 |
 | **验收清单** / 发布前红线 | [`docs/`](docs/claude-code-wecom-guide.md) §9 / §10 |
 | 代码在哪 | 见下表「目录」 |
 
@@ -341,6 +387,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | [`.claude/settings.json`](.claude/settings.json) | 注册 `approval_hook.py`；`CC_APPROVAL=0` 时它是空壳 |
 | [`docs/`](docs/claude-code-wecom-guide.md) | 接入教程（人 + AI Agent 双读者） |
 | [`platforms/`](platforms/README.md) | 平台适配：契约 + 企业微信 / 飞书 / 钉钉 / Slack 各自的答案 |
+| [`interop/`](interop/README.md) | 生态互联：官方 CLI 怎么当执行面接进来，四个平台差在哪 |
 | [`LICENSE`](LICENSE) [`NOTICE`](NOTICE) | Apache-2.0 全文与版权声明（都在仓库根目录） |
 | `logs/` `data/` `.env` | 运行产物与凭证，**不入库** |
 
