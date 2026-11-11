@@ -10,6 +10,22 @@ import time
 from common import log
 from core.runner import _clip, _short_path, tool_desc
 
+# 平台硬限制（官方文档「模板卡片」）：`horizontal_content_list` **列表长度不超过 6**。
+# 超了不是截断，是**整张卡被 `42035 Template_Card horizontal_content_list Invalid Size` 拒**
+# —— 2026-11-12 实测：`/status` 加到第 7 行后，卡片再没发出去过，只有一行 WARNING。
+# 所以这里统一兜底：超了先**喊一声**（哪些行没显示），再截。
+_CARD_ROWS_MAX = 6
+
+
+def _cap_rows(rows, what):
+    """按平台上限截断 `horizontal_content_list`，并把丢掉的行打出来。"""
+    if len(rows) > _CARD_ROWS_MAX:
+        log.error("[card] %s 有 %d 行，超过平台上限 %d；多出的行不会显示：%s",
+                  what, len(rows), _CARD_ROWS_MAX,
+                  [r.get("keyname") for r in rows[_CARD_ROWS_MAX:]])
+        return rows[:_CARD_ROWS_MAX]
+    return rows
+
 
 class WeComRenderMixin:
     """把「要给人看的东西」渲染成企微卡片。""" 
@@ -24,9 +40,9 @@ class WeComRenderMixin:
             # 卡片上写一个群里不存在的名字比不写更糟。
             "main_title": {"title": f"{self.bot_name} · 状态",
                            "desc": "企微 ⇄ 本机 Claude Code"},
-            "horizontal_content_list": [{"keyname": k, "value": v}
-                                         for k, v in self._status_pairs(chatid, chat_type,
-                                                                         userid)],
+            "horizontal_content_list": _cap_rows(
+                [{"keyname": k, "value": v}
+                 for k, v in self._status_pairs(chatid, chat_type, userid)], "/status"),
             # ⚠️ 按钮文字**只能是 2 个字**：实测 4 个字会被截断，
             # 手机上显示成「清...」、PC 上「清上...」（2026-10-29 用户实测）。
             # 语义放到 `sub_title_text` 里解释，别指望按钮放得下。
@@ -76,7 +92,7 @@ class WeComRenderMixin:
             "source": {"desc": "Agent-Ops-WeCom-Bridge"},
             "main_title": {"title": "需要你确认",
                            "desc": f"{tool_desc(tool, req.get('tool_input'))}"},
-            "horizontal_content_list": rows,
+            "horizontal_content_list": _cap_rows(rows, "审批卡"),
             # 按钮文字**只能 2 个字**（实测），语义只能放这里
             "sub_title_text": f"点「允许」才会执行；{int(self.approval_wait_sec or 120)} 秒内不点按拒绝处理。",
             "button_list": [

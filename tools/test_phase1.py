@@ -917,6 +917,12 @@ def test_busy_drop():
           str(card.get("card_action")))
     check("卡片有 task_id（回调要靠它认领）", bool(card.get("task_id")),
           str(card.get("task_id")))
+    # 平台硬限制（官方文档「模板卡片」）：horizontal_content_list **不超过 6 行**。
+    # 2026-11-12 实测：第 7 行（「模型」）加进来后，整张卡被 42035 拒，
+    # 而代码只打一行 WARNING 就退回文本 —— 用户侧表现是"卡片不见了"。
+    rows = card.get("horizontal_content_list") or []
+    check("状态卡行数 ≤ 6（平台上限，超了整张卡被 42035 拒）",
+          len(rows) <= 6, f"{len(rows)} 行: {[r.get('keyname') for r in rows]}")
 
     # 忙碌时 /stop 仍可用（且确实转到 runner）
     b._handle_callback(msg("/stop", "m-stop"))

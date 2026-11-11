@@ -374,11 +374,21 @@ class CoreMixin:
                 else getattr(self.runner, "model", "")
         except Exception:                          # noqa: BLE001
             model = ""
+        # ⚠️ **行数是硬约束：平台上限 6**（官方文档「模板卡片」：
+        # `horizontal_content_list` 列表长度不超过 6）。2026-11-12 实测：
+        # 第 7 行（「模型」，2026-11-09 加）进来之后，整张卡被
+        # `42035 Template_Card horizontal_content_list Invalid Size` 拒掉，
+        # 而代码只打一行 WARNING 就退回文本 ⇒ 用户侧看到的是"卡片不见了"。
+        # 所以「队列」并进「当前任务」，不再单独占一行。
+        if cur:
+            task = "运行中 %.0f 秒" % (time.time() - cur["started"])
+        elif others:
+            task = f"空闲（另有 {others} 个会话在跑）"
+        else:
+            task = "空闲"
+        task += f" · 队列 {self._q.qsize()} 条"
         return [
-            ("队列", f"{self._q.qsize()} 条"),
-            ("当前任务",
-             ("运行中 %.0f 秒" % (time.time() - cur["started"])) if cur
-             else (f"空闲（另有 {others} 个会话在跑）" if others else "空闲")),
+            ("当前任务", task),
             ("上下文", usage or "—（重启后首轮还没跑）"),
             ("会话", (sid or "")[:8] or "（无，下一轮新建）"),
             ("档位", f"{self.runner.perm_mode or '默认'} / 超时 {self.runner.timeout}s"),
