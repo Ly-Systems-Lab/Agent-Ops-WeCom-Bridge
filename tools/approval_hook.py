@@ -155,7 +155,14 @@ _EFFECT_PATHS = {
 # 模型看到的就是"这条路走不通"，不给它拼出正确路径的线索。
 CRED_DENY_REASON = "这是凭据存储，安全策略禁止访问。"
 
-_HOME_STORES = (".dws", ".lark-cli")          # 用户主目录下的 CLI 数据目录
+_HOME_STORES = (".dws", ".lark-cli",         # 用户主目录下的 CLI 数据目录
+                # 2026-11-12 补：DSH 是 **凭据 + 配置 + 全部历史会话** 三合一
+                # （`.credentials.yaml` / `settings.yaml` / `sessions/`）。
+                # 它比 `~/.claude` 更集中：读到它等于同时拿到模型 key 和别人的聊天全文。
+                ".dsh",
+                # 官方 `wecom-cli` 的 OAuth 凭据（`credentials.enc` + `.encryption_key`）。
+                # 它是「Agent 的手」的登录态 —— Agent 只该**调用** CLI，不该读它的令牌。
+                ".config/wecom")
 # 主目录下**同样是凭据**、但不属于上面两个 CLI 的位置（2026-11-11 补）：
 #   `.claude/`、`.claude.json` —— CC 自己的配置与会话记录，里面是明文 token
 #       和**对话全文**（跨会话可读 ⇒ 等于泄漏别人的聊天）。

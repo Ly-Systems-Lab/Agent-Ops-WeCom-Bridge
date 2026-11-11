@@ -110,8 +110,9 @@ Windows 路径 ⇒ 写成 `MSYS_NO_PATHCONV=1 lark-cli api GET /open-apis/...`�
 **`--dry-run` 照样弹卡** —— 卡面只提示可以干跑，不替你执行。
 `lark-cli update` 之后跑一次 `tools/lark_effect_sync.py --check`。
 
-⛔ **凭据存储不弹卡，直接拒绝**：`~/.dws/`、`~/.lark-cli/`、`~/.claude/`、
-`~/.claude.json`、`~/.ssh/`、`data/wecom-cli-cc/`，以及**任意目录下的
+⛔ **凭据存储不弹卡，直接拒绝**：`~/.dws/`、`~/.lark-cli/`、`~/.dsh/`、
+`~/.config/wecom/`、`~/.claude/`、`~/.claude.json`、`~/.ssh/`、`data/wecom-cli-cc/`，
+以及**任意目录下的
 `.env` / `.env.*`（豁免 `.env.example`）与私钥文件**（`*.pem` / `*.key` / `id_rsa*`）
 —— 这些位置**任何工具都不许读**（`Read` / `Grep` / `Glob` / `Bash` 全都管），
 免卡白名单也不破例。理由是 Agent 没有正当理由读令牌，一张"要不要允许"的卡
