@@ -77,6 +77,39 @@ dws <path> --dry-run                   # 预览，不执行
 表外按写。所以查询类命令可以直接跑 —— 别为了"绕过"去改写法：
 `$(...)`、重定向、`PATH=... dws`、管道喂给非过滤器，都会把它变回"按写处理"。
 
+## 飞书能力（lark-cli）
+
+本机装了**官方** `lark-cli`（`lark-cli --version`；`lark-cli auth status` 应显示已登录）。
+**和 `dws` 是同一类东西：Agent 的「手」** —— 日历、消息、文档、多维表格、表格、任务、
+知识库、邮箱、审批、OKR。
+
+🔴 **默认用你本人的 OAuth 执行**（`--as bot` 才切到应用自己的机器人身份）：
+同学看到的是**你**。对外动作（发消息、发邮件、改文档）**没有用户明确要求就不做**；
+卡面的「执行身份」一栏会按命令实际带的 `--as` 显示。
+
+用法（**以运行时 schema 为准**）：
+
+```bash
+lark-cli <域> --help                   # 域下有哪些命令
+lark-cli <域> +<快捷命令>               # 优先用快捷命令（比裸 API 友好）
+lark-cli schema <域.资源.方法>          # 参数、类型、scope
+lark-cli <命令> --help                 # 末尾那行 Risk: read|write|high-risk-write
+lark-cli <命令> --dry-run              # 预览请求，不执行
+```
+
+**判成功看 `ok == true`**（或退出码），**不要看 `code == 0`** —— 成功信封里没有 `code`。
+`high-risk-write` 官方要求带 `--yes`；`--yes` 不能代替审批。
+
+⚠️ **Git Bash 里调 `lark-cli api` 要加前缀**：`/open-apis/...` 会被 MSYS 改写成
+Windows 路径 ⇒ 写成 `MSYS_NO_PATHCONV=1 lark-cli api GET /open-apis/...`。
+闸门已放行这个前缀（它只控制路径改写，换不掉被执行的程序）；`PATH=` 之类不放。
+
+⚠️ **闸门按官方风险表判**（`interop/lark_effects.json`，由 `tools/lark_effect_sync.py` 同步）：
+`read` 直放，`write` / `high-risk-write` 弹卡，**表外按写**。
+**`api` 通用逃生舱一律弹卡**（官方整体标 write，别按 GET 猜）。
+**`--dry-run` 照样弹卡** —— 卡面只提示可以干跑，不替你执行。
+`lark-cli update` 之后跑一次 `tools/lark_effect_sync.py --check`。
+
 ⛔ **凭据存储不弹卡，直接拒绝**：`~/.dws/`、`~/.lark-cli/`、`~/.claude/`、
 `~/.claude.json`、`~/.ssh/`、`data/wecom-cli-cc/`，以及**任意目录下的
 `.env` / `.env.*`（豁免 `.env.example`）与私钥文件**（`*.pem` / `*.key` / `id_rsa*`）

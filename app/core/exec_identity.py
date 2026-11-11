@@ -20,6 +20,9 @@ _PLATFORMS = {
 # 一条 Bash 命令可能串好几段（`cd x && dws ...`），按 shell 分隔符切开逐段看
 _SPLIT = re.compile(r"&&|\|\||[;|\n]")
 _ENV_PREFIX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# `lark-cli ... --as bot` / `--as=bot` —— 飞书侧同一件事有两种身份，
+# 卡面必须按**命令实际带的那个**写（默认 user）。
+_AS_BOT = re.compile(r"(?:^|\s)--as(?:=|\s+)(bot)\b", re.I)
 
 
 def _basename(tok):
@@ -55,9 +58,18 @@ def platform_of(command):
 
 
 def describe(req):
-    """审批卡上那一行文案。不是跨平台命令 ⇒ 返回空串（卡面保持原样）。"""
+    """审批卡上那一行文案。不是跨平台命令 ⇒ 返回空串（卡面保持原样）。
+
+    ⚠️ 飞书侧的 `--as bot` 是**应用自己的身份**，不是用户本人 —— 卡面不能写
+    "你的账号"。这一条来自官方文档（`interop/feishu.md` §4）：同一件事可能由
+    用户或机器人执行，写错了等于把责任安在错的人头上。
+    """
     if (req.get("tool_name") or "") != "Bash":
         return ""
     cmd = str((req.get("tool_input") or {}).get("command") or "")
     plat = platform_of(cmd)
-    return f"{plat} · 你的账号（不是机器人）" if plat else ""
+    if not plat:
+        return ""
+    if plat == "飞书" and _AS_BOT.search(cmd):
+        return f"{plat} · 机器人身份（应用自己的身份）"
+    return f"{plat} · 你的账号（不是机器人）"

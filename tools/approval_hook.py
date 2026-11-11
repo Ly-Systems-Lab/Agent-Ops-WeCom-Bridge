@@ -74,7 +74,9 @@ SEEN_WAIT_SEC = 10          # 等桥"我看到了"的上限：桥没在跑就别
 #    有个词拿不准 —— 一律弹卡，绝不"猜它是读"。
 # ============================================================
 
-# 执行面 CLI（basename，小写）。dws 有只读表；lark-cli 还没有（P1-4 再接）。
+# 执行面 CLI（basename，小写）。两个都有官方风险表：
+#   dws      → interop/dws_effects.json      （`dws schema --all --compact`）
+#   lark-cli → interop/lark_effects.json     （`lark-cli schema` + 每条 --help 的 Risk 行）
 _PLATFORM_CLIS = {"dws", "dws.exe", "dws.cmd",
                   "lark-cli", "lark-cli.exe", "lark-cli.cmd"}
 
@@ -84,6 +86,15 @@ _LOCAL_SUBCOMMANDS = {"help", "schema", "version"}
 # 管道下端允许出现的**纯过滤器**：只读 stdin、写 stdout，没有写文件的选项。
 # `sort` 的 `-o` / `--output` 由 `_writes_file()` 单独挡。
 _LOCAL_FILTERS = {"head", "tail", "grep", "wc", "jq", "cut", "tr", "sort"}
+# 只往 stdout 打字的 shell 内建。**必须不带路径**（`/tmp/echo` 是任意程序），
+# 而且带 `>` 时照样会被 hazard 拦下。
+_LOCAL_PRINT = {"echo", "printf"}
+# 纯读的本地命令（2026-11-11 用户拍板：只放这两条）。
+# ⚠️ `date -s` / `--set` 会**改系统时间**，必须单独挡掉 —— 不然"只读"两个字就名不副实。
+_LOCAL_READ = {"date", "pwd"}
+# 不影响「执行哪个程序」的环境变量：只控制 Git Bash 的路径改写，可以放行。
+# ⚠️ `PATH=` / `LD_PRELOAD=` / `PYTHONPATH=` 这类一律不放 —— 它们能换掉被执行的程序。
+_HARMLESS_ENV = {"MSYS_NO_PATHCONV", "MSYS2_ARG_CONV_EXCL"}
 
 # 官方标注 effect=read，但**读出来的东西本身就是机密** —— 仍然弹卡，
 # 卡面写明"会读出密钥"，让用户自己判断要不要允许。
@@ -104,10 +115,24 @@ _SENSITIVE_READ = {
 #   · **双引号里 `$()` 和反引号照样执行** ⇒ 必须算进来（踩过：只查引号外会漏）；
 #   · 单独的 `&` 是"后台再跑一条命令" ⇒ 和 `;` 等价，必须拦。
 _HAZARDS = ("$(", "`", ">", "<", "&")
+# **文件描述符复制不算重定向**（2026-11-11 实测后放宽）：`2>&1` / `>&2` / `2>&-`
+# 只是把一路输出接到另一路，不写任何文件，也不执行任何东西。
+# 但 `>` / `<` / `&` 的其它形态一条都不放过：
+#   · `2>&1 > out` 去掉复制后还剩 `> out` ⇒ 仍然按写；
+#   · `2>&1 &` 去掉复制后还剩 `&` ⇒ 仍然是后台；
+#   · `&> out` 不匹配本式（是 `&>` 不是 `>&`）⇒ 仍然按写。
+# 为什么值得放宽：模型几乎每条命令都带 `2>&1 | head`，不放宽的话卡面理由
+# 永远显示「含 `>`」，真正的判据（写操作 / 表外按写 / 通用 API）被这层噪音遮住。
+_FD_DUP = re.compile(r"\d*>&(?:\d+|-)")
 _ENV_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-_EFFECTS = None            # {"cli_path": {...}}，进程内只读一次
-_EFFECTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "..", "interop", "dws_effects.json")
+# 每个执行面 CLI 一张官方风险表，进程内各读一次
+_EFFECTS = {}              # {cli: {命令路径: {...}}}
+_EFFECT_PATHS = {
+    "dws": os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "interop", "dws_effects.json"),
+    "lark-cli": os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "..", "interop", "lark_effects.json"),
+}
 
 
 # ============================================================
@@ -296,16 +321,15 @@ def _cred_hit(name, tool_input, cwd):
     return False
 
 
-def _load_effects():
+def _load_effects(cli="dws"):
     """读官方安全语义快照。读不出来就返回空表 —— 空表 = 全弹卡，这是安全的。"""
-    global _EFFECTS
-    if _EFFECTS is None:
+    if cli not in _EFFECTS:
         try:
-            with open(_EFFECTS_PATH, encoding="utf-8") as f:
-                _EFFECTS = json.load(f).get("commands") or {}
+            with open(_EFFECT_PATHS[cli], encoding="utf-8") as f:
+                _EFFECTS[cli] = json.load(f).get("commands") or {}
         except Exception:
-            _EFFECTS = {}
-    return _EFFECTS
+            _EFFECTS[cli] = {}
+    return _EFFECTS[cli]
 
 
 def _basename(tok):
@@ -420,8 +444,8 @@ def _cli_ok(prog, args):
     # 打印帮助不执行任何东西 —— 写命令带 --help 也是安全的（但见 `_is_help`）
     if _is_help(args):
         return True, ""
-    if prog != "dws":
-        return False, "%s 还没有只读表 ⇒ 按写处理" % prog
+    if prog == "lark-cli":
+        return _lark_ok(args)
     if not args:
         return False, "只写了 %s、没有子命令 ⇒ 按写处理" % prog
     if args[0].startswith("-"):
@@ -469,12 +493,77 @@ def _cli_ok(prog, args):
     return True, ""
 
 
+def _lark_ok(args):
+    """`lark-cli` 这一段是不是只读（P1-4）。
+
+    三层命令各自的分类来源：
+      · API 命令（`im messages delete`）—— `lark-cli schema` 的 `_meta.risk`；
+      · `+快捷命令`（`calendar +agenda`）—— 命令自己 `--help` 末尾那行 `Risk:`；
+      · 通用逃生舱（`api GET /open-apis/...`）—— 官方整体标 write ⇒ 一律按写。
+    前两层由 `tools/lark_effect_sync.py` 抓成 `interop/lark_effects.json`，
+    运行时只读快照。
+
+    ⚠️ **别按 HTTP 动词猜 `api`**：官方把它整体标成 write，我们就跟着 write ——
+       即便 `api GET` 看起来只是读，路径里也可能带副作用。
+    ⚠️ **`--dry-run` 照样弹卡**（与 dws 同一条底线）：万一 CLI 的实现有 bug，
+       "没经批准就写了数据"这个后果赔不起。卡面只负责告诉用户可先干跑。
+    """
+    if not args:
+        return False, "只写了 lark-cli、没有子命令 ⇒ 按写处理"
+    if args[0].startswith("-"):
+        return False, "全局参数写在子命令之前，定位不到命令 ⇒ 按写处理"
+
+    parts = []
+    for a in args:
+        if a.startswith("-"):        # 命令路径在前、flag 在后
+            break
+        parts.append(a.lower())
+    if parts and parts[0] in _LOCAL_SUBCOMMANDS:
+        return True, ""
+    if parts and parts[0] == "api":
+        return False, "通用 API 逃生舱（官方标 write）"
+
+    table = _load_effects("lark-cli")
+    entry, matched = None, ""
+    # 最长前缀匹配：快捷命令是 `域 +名字`（2 段），API 命令最深 `域 资源 方法`（3 段）。
+    # 从长到短试，命中哪条算哪条。
+    for n in range(min(len(parts), 4), 0, -1):
+        key = " ".join(parts[:n])
+        if key in table:
+            entry, matched = table[key], key
+            break
+    if entry is None:
+        shown = " ".join(parts[:3]) + (" …" if len(parts) > 3 else "")
+        return False, "表外按写（%s）" % shown
+
+    risk = str(entry.get("risk") or "")
+    if risk != "read":
+        if any(a == "--dry-run" for a in args):
+            return False, "干跑预览（%s）· 官方标注不会执行" % matched
+        if risk == "high-risk-write":
+            return False, "危险操作（%s · high-risk-write，官方要求 --yes）" % matched
+        return False, "写操作（%s）" % matched
+    return True, ""
+
+
 def _segment_ok(text, is_tail):
     toks = _tokens(text)
+    # ⚠️ 纯 fd 复制 token（`2>&1`）**不是命令的参数**，必须先从分词结果里剔掉：
+    #    否则 `lark-cli task +create --help 2>&1` 里 `--help` 就不再是"最后一个"，
+    #    `_is_help()` 判定失败 ⇒ 看一眼帮助也弹卡（2026-11-11 实测踩到，
+    #    卡面理由写成「写操作（task +create）」）。
+    toks = [t for t in toks if not _FD_DUP.fullmatch(t)]
     if not toks:
         return True, ""
-    if _ENV_ASSIGN.match(toks[0]):
-        return False, "带环境变量前缀（%s）⇒ 按写处理" % toks[0].split("=")[0]
+    # 环境变量前缀：只放行不影响「执行哪个程序」的那几个（Git Bash 路径改写用）。
+    # 前缀可以叠多个 ⇒ 逐条剥离，遇到第一个不放行的就按写处理。
+    while toks and _ENV_ASSIGN.match(toks[0]):
+        name = toks[0].split("=", 1)[0].upper()
+        if name not in _HARMLESS_ENV:
+            return False, "带环境变量前缀（%s）⇒ 按写处理" % toks[0].split("=")[0]
+        toks = toks[1:]
+    if not toks:
+        return False, "只有环境变量前缀、没有命令 ⇒ 按写处理"
     prog = _basename(toks[0])
     if prog == "cd":
         if is_tail:
@@ -489,6 +578,13 @@ def _segment_ok(text, is_tail):
             return False, "同名但不是 PATH 上那个 %s（%s）⇒ 按写处理" % (
                 prog.rsplit(".", 1)[0], toks[0])
         return _cli_ok(prog, toks[1:])
+    if prog in _LOCAL_PRINT and "/" not in toks[0] and "\\" not in toks[0]:
+        return True, ""
+    if prog in _LOCAL_READ and "/" not in toks[0] and "\\" not in toks[0]:
+        if prog == "date" and any(
+                a in ("-s", "--set") or a.startswith("--set=") for a in toks[1:]):
+            return False, "`date -s` / `--set` 会改系统时间 ⇒ 按写处理"
+        return True, ""
     if is_tail and prog in _LOCAL_FILTERS and not _writes_file(toks[1:]):
         return True, ""
     return False, "不是只读命令（%s）" % prog
@@ -502,6 +598,8 @@ def classify_bash(command):
     segs, code, balanced = _split_segments(cmd)
     if not balanced:
         return False, "引号没有闭合，解析不了 ⇒ 按写处理"
+    # `2>&1` 这类 fd 复制先摘掉，再查危险符号（见 `_FD_DUP` 的注释）
+    code = _FD_DUP.sub(" ", code)
     for h in _HAZARDS:
         if h in code:
             return False, "含 `%s`（命令替换/重定向）⇒ 按写处理" % h
@@ -542,6 +640,28 @@ def _log_readonly(adir, cmd):
             f.write("%s\t%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), cmd))
     except Exception:
         pass        # 记不了账不影响放行判断
+
+
+def _log_carded(adir, line):
+    """记一行「这张卡发生过什么」的账（P1-4，2026-11-11）。
+
+    和 `_log_readonly` 互补：直放记一边、弹卡记一边。
+    没有这一行，事后**没法复盘**某条命令为什么弹卡、用户点了什么 ——
+    卡片的请求文件在决定之后就被删了，卡面文字也不进桥日志。
+    （实测教训：小号那轮卡面显示「含 `>`」，我在日志里找不到原命令，只能猜。）
+    """
+    try:
+        os.makedirs(adir, exist_ok=True)
+        path = os.path.join(adir, "carded.log")
+        try:
+            if os.path.getsize(path) > 512 * 1024:
+                os.replace(path, path + ".1")
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8", newline="\n") as f:
+            f.write("%s\t%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), line))
+    except Exception:
+        pass        # 记不了账不影响审批
 
 
 def allow():
@@ -654,6 +774,11 @@ def _run(adir):
         # 写不出请求 ⇒ 桥永远不会知道，别干等
         deny(f"审批请求写不出来（{e}），保守拒绝。")
 
+    # 从"请求写出去"这一刻起就记账：即使后面 hook 被杀（`/stop` 杀进程树那次），
+    # 也能留下"这张卡是什么、为什么弹"的痕迹。
+    _log_carded(adir, "[ask] rid=%s %s %s | %s"
+                % (rid, name, _brief(tool_input), policy or "-"))
+
     t0 = time.time()
     try:
         # ① 等桥"我看到了"（卡片真的发出去了）
@@ -668,6 +793,8 @@ def _run(adir):
                 break
             time.sleep(0.1)
         else:
+            _log_carded(adir, "[deny] rid=%s 桥没响应（%.1fs）"
+                        % (rid, max(0.5, seen_sec)))
             deny(f"{max(0.5, seen_sec):.1f} 秒内桥没有响应（它可能没在跑），"
                  f"已按未审批拒绝。这条请求是：{name}")
 
@@ -677,6 +804,7 @@ def _run(adir):
                 break
             time.sleep(0.2)
         else:
+            _log_carded(adir, "[deny] rid=%s 超时（%.0fs）" % (rid, deadline))
             deny(f"{int(deadline)} 秒内没有点击，已按超时拒绝（这是刻意的默认："
                  f"没人应答就不执行）。要做的话，重新发一次让人守着。")
 
@@ -686,7 +814,9 @@ def _run(adir):
         except Exception:
             verdict = ""
         if verdict.startswith("allow"):
+            _log_carded(adir, "[allow] rid=%s" % rid)
             allow()
+        _log_carded(adir, "[deny] rid=%s 用户拒绝" % rid)
         deny("用户点了「拒绝」，这条工具调用没有执行。")
     except SystemExit:
         raise

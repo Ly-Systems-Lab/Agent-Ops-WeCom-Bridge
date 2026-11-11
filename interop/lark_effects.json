@@ -1,0 +1,6852 @@
+{
+ "_source": "lark-cli schema 的 _meta.risk + 每条命令 --help 的 Risk 行",
+ "_note": "官方风险等级快照。read / write / high-risk-write。只由 tools/lark_effect_sync.py 生成，别手改。high-risk-write 官方要求带 --yes。",
+ "cli_version": "1.0.100",
+ "count": 806,
+ "commands": {
+  "api": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Raw HTTP escape hatch: send any Lark API request by HTTP met"
+  },
+  "application +slash-command-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all slash commands (/ commands) registered on the curre"
+  },
+  "approval approvals get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:approval:read"
+   ],
+   "summary": "获取审批定义详情"
+  },
+  "approval approvals search": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:approval:read"
+   ],
+   "summary": "搜索当前用户可发起的审批定义"
+  },
+  "approval instances cancel": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:instance:write"
+   ],
+   "summary": "撤回审批实例"
+  },
+  "approval instances cc": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:instance:write"
+   ],
+   "summary": "抄送审批实例"
+  },
+  "approval instances create": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:instance:write"
+   ],
+   "summary": "创建审批实例"
+  },
+  "approval instances get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:instance:read"
+   ],
+   "summary": "获取单个审批实例详情"
+  },
+  "approval instances initiated": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:instance:read"
+   ],
+   "summary": "查询用户的已发起列表"
+  },
+  "approval tasks add_sign": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:task:write"
+   ],
+   "summary": "审批任务加签"
+  },
+  "approval tasks approve": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:task:write"
+   ],
+   "summary": "同意审批任务"
+  },
+  "approval tasks query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:task:read"
+   ],
+   "summary": "查询用户的任务列表"
+  },
+  "approval tasks reject": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:task:write"
+   ],
+   "summary": "拒绝审批任务"
+  },
+  "approval tasks remind": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:instance:write"
+   ],
+   "summary": "催办审批人"
+  },
+  "approval tasks rollback": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:task:write"
+   ],
+   "summary": "退回审批任务"
+  },
+  "approval tasks transfer": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "approval:task:write"
+   ],
+   "summary": "转交审批任务"
+  },
+  "apps +access-scope-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get app access scope configuration"
+  },
+  "apps +access-scope-set": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set app access scope (specific / public / tenant)"
+  },
+  "apps +analytics-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List online app user and page-view analytics"
+  },
+  "apps +automation-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create an automation trigger (cron/record-change/webhook/fei"
+  },
+  "apps +automation-disable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Disable an automation trigger (stops auto-firing; does not d"
+  },
+  "apps +automation-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable (activate) an automation trigger"
+  },
+  "apps +automation-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an automation trigger's config (webhook Bearer Token red"
+  },
+  "apps +automation-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List a Miaoda app's automation triggers (cron/record-change/"
+  },
+  "apps +automation-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update a trigger's condition/description, or manage webhook "
+  },
+  "apps +cache-clear": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Clear all cache entries for the app in the given environment"
+  },
+  "apps +cache-delete": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Delete a single business cache key (idempotent)"
+  },
+  "apps +cache-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a business cache key's value and metadata"
+  },
+  "apps +chat": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Send a message to a session to start/continue a conversation"
+  },
+  "apps +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a new app"
+  },
+  "apps +db-audit-disable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Disable row-change audit logging for a table"
+  },
+  "apps +db-audit-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable row-change audit logging for a table"
+  },
+  "apps +db-audit-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List row-change audit events for one or more tables (cursor "
+  },
+  "apps +db-audit-status": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Show table audit (row-change tracking) status"
+  },
+  "apps +db-changelog-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List a Miaoda app database's DDL change history (cursor pagi"
+  },
+  "apps +db-data-export": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Export rows from a Miaoda app table to a local file (csv/jso"
+  },
+  "apps +db-data-import": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Import rows from a local csv/json file into a Miaoda app tab"
+  },
+  "apps +db-env-create": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Create a DB environment (split single-env DB into dev/online"
+  },
+  "apps +db-env-diff": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Preview pending dev→online schema changes (no apply)"
+  },
+  "apps +db-env-migrate": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Publish pending dev→online schema changes (irreversible)"
+  },
+  "apps +db-execute": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Execute SQL (SELECT / DML / DDL) against a Miaoda app databa"
+  },
+  "apps +db-quota-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an app's database storage usage"
+  },
+  "apps +db-recovery-apply": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Restore the database to a point in time (overwrites current "
+  },
+  "apps +db-recovery-diff": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Preview restoring the database to a point in time (PITR diff"
+  },
+  "apps +db-sync-create": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Preview or create a Base data sync task"
+  },
+  "apps +db-sync-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a streaming Base data sync task while keeping target "
+  },
+  "apps +db-sync-disable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Disable a streaming Base data sync task"
+  },
+  "apps +db-sync-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable a streaming Base data sync task"
+  },
+  "apps +db-sync-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a Base data sync task"
+  },
+  "apps +db-sync-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List Base data sync tasks for an app"
+  },
+  "apps +db-sync-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update a Base data sync task configuration"
+  },
+  "apps +db-table-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a table's structure: columns, indexes and constraints"
+  },
+  "apps +db-table-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List tables in an app database (cursor pagination)"
+  },
+  "apps +delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete an app after a pre-delete name check; recovery is ava"
+  },
+  "apps +env-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete app environment variables"
+  },
+  "apps +env-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List app environment variables"
+  },
+  "apps +env-pull": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Pull app startup env vars into the local project .env.local"
+  },
+  "apps +env-set": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set an app environment variable"
+  },
+  "apps +export": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Export an app's source code as a zip archive"
+  },
+  "apps +feature-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable an app business feature on the server (database: the "
+  },
+  "apps +features": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List an app's business features (database) and whether each "
+  },
+  "apps +file-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete one or more files by remote path (batch)"
+  },
+  "apps +file-download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download a file to a local path (via a signed URL)"
+  },
+  "apps +file-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a single file's metadata by path"
+  },
+  "apps +file-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List files in a Miaoda app's storage (cursor pagination)"
+  },
+  "apps +file-quota-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an app's file-storage usage"
+  },
+  "apps +file-sign": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Generate a temporary signed download URL for a file"
+  },
+  "apps +file-upload": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload a local file to an app's storage"
+  },
+  "apps +get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a single app's detail by app ID or meta token (returns a"
+  },
+  "apps +git-credential-init": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Initialize Git credentials and a URL-scoped Git helper for a"
+  },
+  "apps +git-credential-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List local Git credentials for app repositories"
+  },
+  "apps +html-publish": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Publish HTML to an app (returns url or release_id depending "
+  },
+  "apps +init": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Initialize an app's code and local development environment"
+  },
+  "apps +list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List apps visible to the calling user (cursor pagination)"
+  },
+  "apps +log-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get one online app log by log ID"
+  },
+  "apps +log-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search online app logs with observability filters"
+  },
+  "apps +member-add": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Add an application collaborator"
+  },
+  "apps +member-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List application collaborators"
+  },
+  "apps +member-remove": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Remove an application collaborator"
+  },
+  "apps +member-settings-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get application collaborator settings"
+  },
+  "apps +member-settings-set": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update application collaborator settings"
+  },
+  "apps +member-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update an application collaborator"
+  },
+  "apps +metric-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List online app request, latency, CPU, and memory metrics"
+  },
+  "apps +openapi-key-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create an open API key (returns the raw secret once)"
+  },
+  "apps +openapi-key-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete an open API key (irreversible; prefer +openapi-key-di"
+  },
+  "apps +openapi-key-disable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Disable an open API key (minimal safety brake)"
+  },
+  "apps +openapi-key-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable an open API key"
+  },
+  "apps +openapi-key-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an open API key detail (secret redacted)"
+  },
+  "apps +openapi-key-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List an app's open API keys (secrets redacted)"
+  },
+  "apps +openapi-key-reset": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Reset (rotate) an open API key; returns a new raw secret onc"
+  },
+  "apps +openapi-key-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an open API key's name and/or scope"
+  },
+  "apps +plugin-install": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Install a plugin package (download, extract, update package."
+  },
+  "apps +plugin-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List locally installed plugin packages and their installatio"
+  },
+  "apps +plugin-uninstall": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Uninstall a plugin package (remove from node_modules and pac"
+  },
+  "apps +release-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a release for an app (returns release_id for status p"
+  },
+  "apps +release-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a single release's status/detail by release ID"
+  },
+  "apps +release-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List an app's release history (most recent first)"
+  },
+  "apps +role-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create an app role"
+  },
+  "apps +role-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete an app role"
+  },
+  "apps +role-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an app role"
+  },
+  "apps +role-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List app roles"
+  },
+  "apps +role-match-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List app roles matching a user"
+  },
+  "apps +role-member-add": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add app role members"
+  },
+  "apps +role-member-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List app role members"
+  },
+  "apps +role-member-remove": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Remove app role members"
+  },
+  "apps +role-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an app role"
+  },
+  "apps +session-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a session under an app"
+  },
+  "apps +session-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Read a session's current status, queued turns, and latest tu"
+  },
+  "apps +session-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List sessions under an app (cursor pagination)"
+  },
+  "apps +session-stop": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Stop (interrupt) the running turn of a session"
+  },
+  "apps +trace-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get one online app trace by trace ID"
+  },
+  "apps +trace-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search online app traces with observability filters"
+  },
+  "apps +update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Partially update an app (only provided fields are sent)"
+  },
+  "apps +user-id-convert": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Convert Miaoda user IDs ↔ Feishu open platform IDs (open_id "
+  },
+  "attendance user_tasks query": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "attendance:task:readonly"
+   ],
+   "summary": "Obtain attendance result"
+  },
+  "auth check": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Check if current token has specified scopes"
+  },
+  "auth list": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "List all logged-in users"
+  },
+  "auth login": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Device Flow authorization login."
+  },
+  "auth logout": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Log out (clear token)"
+  },
+  "auth scopes": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Query scopes enabled for the app"
+  },
+  "auth status": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "View current auth status"
+  },
+  "base +advperm-disable": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Disable advanced permissions for a Base"
+  },
+  "base +advperm-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable advanced permissions for a Base"
+  },
+  "base +app-block-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a block on a BaseApp page"
+  },
+  "base +app-block-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a BaseApp page block by ID"
+  },
+  "base +app-block-get-data": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get computed data for a BaseApp page chart block"
+  },
+  "base +app-block-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List blocks on a BaseApp page"
+  },
+  "base +app-block-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a block on a BaseApp page"
+  },
+  "base +app-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a new BaseApp in a Workspace (not a copy)"
+  },
+  "base +app-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get BaseApp info, page summaries, and the referenced Base/Ta"
+  },
+  "base +app-page-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a page in a BaseApp"
+  },
+  "base +app-page-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a BaseApp page"
+  },
+  "base +app-page-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a BaseApp page by ID"
+  },
+  "base +app-page-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List pages in a BaseApp"
+  },
+  "base +app-page-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rename a BaseApp page"
+  },
+  "base +base-block-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a block"
+  },
+  "base +base-block-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a block"
+  },
+  "base +base-block-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List blocks in a base"
+  },
+  "base +base-block-move": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Move a block"
+  },
+  "base +base-block-rename": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rename a block"
+  },
+  "base +base-copy": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Copy a Base resource (not a BaseApp)"
+  },
+  "base +base-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a new base resource"
+  },
+  "base +base-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a base resource"
+  },
+  "base +button-rule-bind": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Bind a button field to a workflow"
+  },
+  "base +button-rule-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get the target bound to a button field"
+  },
+  "base +button-rule-unbind": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Remove the workflow binding from a button field"
+  },
+  "base +dashboard-arrange": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Auto-arrange dashboard blocks layout (server-side smart layo"
+  },
+  "base +dashboard-block-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a block in a dashboard"
+  },
+  "base +dashboard-block-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a dashboard block"
+  },
+  "base +dashboard-block-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a dashboard block by ID"
+  },
+  "base +dashboard-block-get-data": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get computed data for a dashboard chart block"
+  },
+  "base +dashboard-block-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List blocks in a dashboard"
+  },
+  "base +dashboard-block-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a dashboard block"
+  },
+  "base +dashboard-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a dashboard in a base"
+  },
+  "base +dashboard-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a dashboard"
+  },
+  "base +dashboard-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a dashboard by ID"
+  },
+  "base +dashboard-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List dashboards in a base"
+  },
+  "base +dashboard-share-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get dashboard share status and settings"
+  },
+  "base +dashboard-share-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update dashboard share status and settings"
+  },
+  "base +dashboard-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a dashboard"
+  },
+  "base +data-query": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Query and analyze Base data with JSON DSL (aggregation, filt"
+  },
+  "base +field-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create one or more fields"
+  },
+  "base +field-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a field by ID or name"
+  },
+  "base +field-extension-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a field extension configuration"
+  },
+  "base +field-extension-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Install, update, or clear a field extension"
+  },
+  "base +field-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a field by ID or name"
+  },
+  "base +field-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all fields in a table"
+  },
+  "base +field-search-options": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search select options of a field"
+  },
+  "base +field-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update a field by ID or name"
+  },
+  "base +form-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a form in a Base table"
+  },
+  "base +form-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a form in a Base table"
+  },
+  "base +form-detail": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get form detail by share token"
+  },
+  "base +form-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a form in a Base table"
+  },
+  "base +form-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all forms in a Base table (auto-paginated)"
+  },
+  "base +form-questions-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create questions for a form in a Base table"
+  },
+  "base +form-questions-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete questions from a form in a Base table"
+  },
+  "base +form-questions-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List questions of a form in a Base table"
+  },
+  "base +form-questions-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update questions of a form in a Base table"
+  },
+  "base +form-share-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get form share status and settings"
+  },
+  "base +form-share-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update form share status and settings"
+  },
+  "base +form-submit": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Submit a form (fill and submit form data)"
+  },
+  "base +form-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a form in a Base table"
+  },
+  "base +record-batch-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch create records"
+  },
+  "base +record-batch-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch update records with record-specific fields"
+  },
+  "base +record-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete one or more records by ID"
+  },
+  "base +record-download-attachment": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download Base record attachments by record-id, optionally fi"
+  },
+  "base +record-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get one or more records by ID"
+  },
+  "base +record-history-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List record change history"
+  },
+  "base +record-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List records in a table"
+  },
+  "base +record-remove-attachment": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Remove one or more file_token values from a Base record atta"
+  },
+  "base +record-search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search records in a table"
+  },
+  "base +record-share-link-create": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Generate share links for one or more records (max 100 per re"
+  },
+  "base +record-upload-attachment": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload one or more local files and append the returned file_"
+  },
+  "base +record-upsert": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create or update a record"
+  },
+  "base +role-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a custom role in a Base"
+  },
+  "base +role-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a custom role (system roles cannot be deleted)"
+  },
+  "base +role-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get full config of a role"
+  },
+  "base +role-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all roles in a Base"
+  },
+  "base +role-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update a role config (delta merge, only changed fields neede"
+  },
+  "base +table-copy": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Copy a table by ID or name; structure only by default"
+  },
+  "base +table-copy-status": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get one table copy task status"
+  },
+  "base +table-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a table with an explicit field schema, plus optional "
+  },
+  "base +table-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a table by ID or name"
+  },
+  "base +table-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a table by ID or name"
+  },
+  "base +table-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all tables in a base"
+  },
+  "base +table-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rename a table by ID or name"
+  },
+  "base +template-categories": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List Base template center categories"
+  },
+  "base +template-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List Base templates by category"
+  },
+  "base +template-search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search Base templates by keyword"
+  },
+  "base +title-resolve": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Resolve a Base title or keyword through Drive search"
+  },
+  "base +url-resolve": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Resolve a Base or BaseApp URL into usable coordinates"
+  },
+  "base +view-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create one or more views"
+  },
+  "base +view-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a view by ID or name"
+  },
+  "base +view-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a view by ID or name"
+  },
+  "base +view-get-card": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get view card configuration"
+  },
+  "base +view-get-filter": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get view filter configuration"
+  },
+  "base +view-get-group": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get view group configuration"
+  },
+  "base +view-get-sort": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get view sort configuration"
+  },
+  "base +view-get-timebar": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get view timebar configuration"
+  },
+  "base +view-get-visible-fields": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get view visible fields configuration"
+  },
+  "base +view-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List views in a table"
+  },
+  "base +view-rename": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rename a view by ID or name"
+  },
+  "base +view-set-card": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set view card configuration"
+  },
+  "base +view-set-filter": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set view filter configuration"
+  },
+  "base +view-set-group": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set view group configuration"
+  },
+  "base +view-set-sort": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set view sort configuration"
+  },
+  "base +view-set-timebar": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set view timebar configuration"
+  },
+  "base +view-set-visible-fields": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set view visible fields"
+  },
+  "base +workflow-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a new workflow in a base"
+  },
+  "base +workflow-disable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Disable a workflow in a base"
+  },
+  "base +workflow-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable a workflow in a base"
+  },
+  "base +workflow-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a single workflow definition (including steps) from a ba"
+  },
+  "base +workflow-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all workflows in a base (auto-paginated)"
+  },
+  "base +workflow-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Replace a workflow's full definition (title and/or steps) in"
+  },
+  "base +workspace-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a workspace"
+  },
+  "base +workspace-entity-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List bases and BaseApps in a workspace"
+  },
+  "base +workspace-move-in": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Move an existing Base or BaseApp into a workspace"
+  },
+  "calendar +agenda": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "View calendar agenda (defaults to today)"
+  },
+  "calendar +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a calendar event and optionally invite attendees"
+  },
+  "calendar +delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a calendar event; requires --apply-to for recurring e"
+  },
+  "calendar +freebusy": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Query free/busy for one or more users. Merges overlapping bu"
+  },
+  "calendar +get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a single calendar event detail by calendar-id and event-"
+  },
+  "calendar +join-event": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Join a calendar event via a share token (from a share link/Q"
+  },
+  "calendar +meeting": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get meeting info for calendar events (meeting_id, meeting_no"
+  },
+  "calendar +room-find": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Find available meeting room candidates for one or more event"
+  },
+  "calendar +rsvp": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Reply to a calendar event (accept/decline/tentative)"
+  },
+  "calendar +search-event": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search calendar events by keyword, time range, and attendees"
+  },
+  "calendar +suggestion": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Intelligently suggest available time blocks based on unclear"
+  },
+  "calendar +transfer": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Transfer the organizer role of a calendar event to another u"
+  },
+  "calendar +update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a calendar event and incrementally add or remove atte"
+  },
+  "calendar calendars create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar:create"
+   ],
+   "summary": "Create a shared calendar"
+  },
+  "calendar calendars delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar:delete"
+   ],
+   "summary": "Delete shared calendar"
+  },
+  "calendar calendars get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar:read"
+   ],
+   "summary": "Query calendar information"
+  },
+  "calendar calendars list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.calendar:readonly",
+    "calendar:calendar:read"
+   ],
+   "summary": "Query the calendar list"
+  },
+  "calendar calendars patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar:update"
+   ],
+   "summary": "Update calendar information"
+  },
+  "calendar calendars primary": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar.calendar:readonly",
+    "calendar:calendar:read"
+   ],
+   "summary": "查询主日历信息。推荐使用此 API 获取主日历 ID，无需先 list 再过滤"
+  },
+  "calendar calendars search": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar:read"
+   ],
+   "summary": "Search for calendars"
+  },
+  "calendar event.attendees batch_delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar.event:writeonly",
+    "calendar:calendar.event:update"
+   ],
+   "summary": "Delete event invitees"
+  },
+  "calendar event.attendees create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar.event:update"
+   ],
+   "summary": "Create event invitees"
+  },
+  "calendar event.attendees list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.event:read"
+   ],
+   "summary": "Obtain event invitee list"
+  },
+  "calendar events create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar.event:create"
+   ],
+   "summary": "Create an event"
+  },
+  "calendar events delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar.event:writeonly",
+    "calendar:calendar.event:delete"
+   ],
+   "summary": "Delete an event"
+  },
+  "calendar events get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.event:read"
+   ],
+   "summary": "Obtain an event"
+  },
+  "calendar events instance_view": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.event:read"
+   ],
+   "summary": "Query event view"
+  },
+  "calendar events patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar",
+    "calendar:calendar.event:update"
+   ],
+   "summary": "Update an event"
+  },
+  "calendar events search_event": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.event:read"
+   ],
+   "summary": "搜索日程"
+  },
+  "calendar events share_info": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.event:read"
+   ],
+   "summary": "获取日程分享信息"
+  },
+  "calendar freebusys list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "calendar:calendar:readonly",
+    "calendar:calendar",
+    "calendar:calendar.free_busy:read"
+   ],
+   "summary": "Query availability of the primary calendar"
+  },
+  "config bind": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Bind an AI Agent's (OpenClaw / Hermes / Lark Channel) Feishu"
+  },
+  "config default-as": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Without arguments, shows the current default identity. Pass "
+  },
+  "config init": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Initialize configuration (app-id / app-secret-stdin / brand)"
+  },
+  "config remove": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Remove app configuration (clears all tokens and config)"
+  },
+  "config risk-control": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "View or set the account-protection risk-control policy for t"
+  },
+  "config set": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Set a supported configuration value."
+  },
+  "config show": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Show current configuration"
+  },
+  "config strict-mode": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "View or set strict mode — the identity restriction policy."
+  },
+  "contact +get-user": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get user info (omit user_id for self; provide user_id for sp"
+  },
+  "contact +search-bot": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search bots (apps) by keyword — across the tenant, or inside"
+  },
+  "contact +search-user": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search Lark/Feishu users by keyword, open_id list, or filter"
+  },
+  "contact user_profiles batch_query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "profile:user_profile:read"
+   ],
+   "summary": "批量获取用户个人资料（个人状态、个性签名）。Identity: `user` only (`user_access_to"
+  },
+  "docs +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a Lark document"
+  },
+  "docs +fetch": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Fetch Lark document content"
+  },
+  "docs +history-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List Lark document history versions"
+  },
+  "docs +history-revert": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Revert a Lark document to a historical version"
+  },
+  "docs +media-download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download document media or whiteboard thumbnail (auto-detect"
+  },
+  "docs +media-insert": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Insert a local image or file at the end of a Lark document ("
+  },
+  "docs +media-preview": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Preview document media or comment image (auto-detects extens"
+  },
+  "docs +media-upload": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload media file (image/attachment) to a document block"
+  },
+  "docs +resource-delete": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Delete a document resource (type=cover is idempotent when em"
+  },
+  "docs +resource-download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download a document resource (type=cover downloads the cover"
+  },
+  "docs +resource-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload and update a document resource (type=cover)"
+  },
+  "docs +script": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Initialize a document draft workspace, or parse, preflight, "
+  },
+  "docs +search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search Lark docs, Wiki, and spreadsheet files (Search v2: do"
+  },
+  "docs +update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a Lark document"
+  },
+  "docs +whiteboard-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing whiteboard in lark document with mermaid,"
+  },
+  "doctor": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "CLI health check: config, auth, and connectivity"
+  },
+  "drive +add-comment": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add a comment to doc/docx/file/sheet/slides/base(bitable); f"
+  },
+  "drive +add-reply": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add a reply to an existing comment on doc/docx/sheet/file/sl"
+  },
+  "drive +apply-permission": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Apply to the owner for view or edit permission on a Drive re"
+  },
+  "drive +batch-query-comments": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch get comments by comment ID for doc/docx/sheet/file/sli"
+  },
+  "drive +copy": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Copy a Drive resource into a target folder; wiki token/URL s"
+  },
+  "drive +cover": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List or download stable cover presets for a Drive file"
+  },
+  "drive +create-folder": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a folder in Drive"
+  },
+  "drive +create-shortcut": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a Drive shortcut in another folder"
+  },
+  "drive +delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a file or folder in Drive"
+  },
+  "drive +delete-reply": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a reply of a comment on doc/docx/sheet/file/slides/ba"
+  },
+  "drive +download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download a file from Drive to local"
+  },
+  "drive +export": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Export a doc/docx/sheet/bitable/slides or wiki document to a"
+  },
+  "drive +export-download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download an exported file by file_token"
+  },
+  "drive +import": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Import a local file to Drive as a cloud document (docx, shee"
+  },
+  "drive +inspect": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Inspect a Lark document URL to get its type, title, and cano"
+  },
+  "drive +list-comments": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List comments for doc/docx/sheet/file/slides/base(bitable)/a"
+  },
+  "drive +list-replies": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List replies of a comment on doc/docx/sheet/file/slides/base"
+  },
+  "drive +member-add": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Add a collaborator/member permission to a Drive resource"
+  },
+  "drive +member-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List collaborator/member permissions on a Drive resource"
+  },
+  "drive +member-remove": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Remove one collaborator/member permission from a Drive resou"
+  },
+  "drive +move": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Move a file or folder to another location in Drive"
+  },
+  "drive +permission-get-setting": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get public access, sharing, collaborator management, securit"
+  },
+  "drive +preview": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "View or download Drive file content, or list and fetch avail"
+  },
+  "drive +pull": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "One-way file-level mirror of a Drive folder onto a local dir"
+  },
+  "drive +push": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "File-level mirror of a local directory onto a Drive folder ("
+  },
+  "drive +react-reply": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add or remove an emoji reaction on a comment reply for doc/d"
+  },
+  "drive +resolve-comment": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Resolve (mark solved) a comment on doc/docx/sheet/file/slide"
+  },
+  "drive +restore-comment": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Restore (reopen) a solved comment on doc/docx/sheet/file/sli"
+  },
+  "drive +search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search Lark docs, Wiki, and spreadsheet files with flat filt"
+  },
+  "drive +secure-label-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List secure labels available to the current user"
+  },
+  "drive +secure-label-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update the secure label on a Drive file or document"
+  },
+  "drive +status": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Compare a local directory with a Drive folder by exact hash "
+  },
+  "drive +sync": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Two-way sync between a local directory and a Drive folder"
+  },
+  "drive +task_result": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Poll async task result for import, export, drive move/delete"
+  },
+  "drive +update-reply": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update the content of a comment reply on doc/docx/sheet/file"
+  },
+  "drive +update-title": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rename a Drive file, folder, online document (docx/sheet/bas"
+  },
+  "drive +upload": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload a local file to Drive"
+  },
+  "drive +version-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a specific historical version of a Drive file"
+  },
+  "drive +version-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download a specific version of a Drive file"
+  },
+  "drive +version-history": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List the version history of a Drive file"
+  },
+  "drive +version-revert": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Revert a Drive file to a specific historical version"
+  },
+  "drive file.comment.reply.reactions update_reaction": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "docs:document.comment:create",
+    "docs:document.comment:write_only"
+   ],
+   "summary": "Add/Cancel Emoji Response"
+  },
+  "drive file.comment.replys create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "drive:drive:readonly",
+    "docs:doc:readonly",
+    "sheets:spreadsheet:readonly",
+    "docs:document.comment:create"
+   ],
+   "summary": "Add Reply"
+  },
+  "drive file.comment.replys delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "drive:drive:readonly",
+    "docs:doc:readonly",
+    "sheets:spreadsheet:readonly",
+    "docs:document.comment:write_only",
+    "docs:document.comment:delete"
+   ],
+   "summary": "Delete Reply"
+  },
+  "drive file.comment.replys list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive:readonly",
+    "docs:document.comment:read"
+   ],
+   "summary": "Get Replies List"
+  },
+  "drive file.comment.replys update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "drive:drive:readonly",
+    "docs:doc:readonly",
+    "sheets:spreadsheet:readonly",
+    "docs:document.comment:write_only",
+    "docs:document.comment:update"
+   ],
+   "summary": "Update Reply"
+  },
+  "drive file.comments batch_query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive:readonly",
+    "docs:document.comment:read"
+   ],
+   "summary": "Batch Query Comments"
+  },
+  "drive file.comments create_v2": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "docs:document.comment:create",
+    "docs:document.comment:write_only"
+   ],
+   "summary": "开放平台：添加评论(V2)"
+  },
+  "drive file.comments list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "drive:drive:readonly",
+    "docs:doc:readonly",
+    "sheets:spreadsheet:readonly",
+    "docs:document.comment:read"
+   ],
+   "summary": "Get Document Comments in Pages"
+  },
+  "drive file.comments patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "drive:drive:readonly",
+    "docs:doc:readonly",
+    "sheets:spreadsheet:readonly",
+    "docs:document.comment:write_only",
+    "docs:document.comment:update"
+   ],
+   "summary": "Solve or Restore a Comment"
+  },
+  "drive file.statistics get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive:readonly",
+    "drive:drive.metadata:readonly"
+   ],
+   "summary": "Obtain file's statistics"
+  },
+  "drive file.view_records list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "contact:user.base:readonly",
+    "drive:file:view_record:readonly"
+   ],
+   "summary": "Obtain file view records"
+  },
+  "drive files copy": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:document:copy"
+   ],
+   "summary": "Copy a file"
+  },
+  "drive files create_folder": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "space:folder:create"
+   ],
+   "summary": "Create Folder"
+  },
+  "drive files list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive:readonly",
+    "space:document:retrieve"
+   ],
+   "summary": "List items in folder"
+  },
+  "drive files patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "docx:document:write_only",
+    "sheets:spreadsheet:write_only",
+    "base:app:update",
+    "drive:file:upload"
+   ],
+   "summary": ""
+  },
+  "drive metas batch_query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive.metadata:readonly"
+   ],
+   "summary": "Obtain metadata"
+  },
+  "drive permission.members auth": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "bitable:bitable",
+    "wiki:wiki",
+    "bitable:app",
+    "docs:permission.member:auth"
+   ],
+   "summary": "Check whether the current user has a specific permission"
+  },
+  "drive permission.members create": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:file",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "wiki:wiki",
+    "bitable:bitable",
+    "bitable:app",
+    "docs:permission.member:create"
+   ],
+   "summary": "Add permissions"
+  },
+  "drive permission.members transfer_owner": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "bitable:bitable",
+    "wiki:wiki",
+    "bitable:app",
+    "docs:permission.member:transfer"
+   ],
+   "summary": "Transfer owner"
+  },
+  "drive permission.public get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive:readonly",
+    "drive:file",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "wiki:wiki",
+    "bitable:bitable",
+    "docs:permission.setting:read"
+   ],
+   "summary": "Get cloud document permission settings"
+  },
+  "drive permission.public patch": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:file",
+    "docs:doc",
+    "sheets:spreadsheet",
+    "wiki:wiki",
+    "bitable:bitable",
+    "docs:permission.setting:write_only"
+   ],
+   "summary": "Update common settings of a document"
+  },
+  "drive quota_details get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "drive:quota_detail:read_one"
+   ],
+   "summary": "获取当前用户的容量信息，包含各业务使用量、租户配额是否超限、用户配额、所在部门配额"
+  },
+  "drive user remove_subscription": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "docs:document.comment:read"
+   ],
+   "summary": "Cancel User Subscription to Cloud Document Events"
+  },
+  "drive user subscription": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "docs:document.comment:read"
+   ],
+   "summary": "Subscribe to User Cloud Document Events"
+  },
+  "drive user subscription_status": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "docs:document.comment:read"
+   ],
+   "summary": "Query the Subscription Status of User Cloud Document Events"
+  },
+  "event consume": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Start consuming real-time events for the given EventKey."
+  },
+  "event list": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Show all registered EventKeys grouped by domain (first segme"
+  },
+  "event schema": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Display detailed information about an EventKey including typ"
+  },
+  "event status": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Connect to each bus daemon under the config-dir/events/ tree"
+  },
+  "event stop": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Stop the event bus daemon. Target is one of:"
+  },
+  "im +chat-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a group chat or topic chat; user/bot; --chat-mode gro"
+  },
+  "im +chat-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List chats the current user/bot is a member of; defaults to "
+  },
+  "im +chat-members-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List members of a chat; returns separate users[] / bots[] bu"
+  },
+  "im +chat-messages-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List messages in a chat or P2P conversation; user/bot; accep"
+  },
+  "im +chat-search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search visible group chats by --query keyword and/or --membe"
+  },
+  "im +chat-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update group chat name or description; user/bot; updates a c"
+  },
+  "im +feed-group-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List the caller's feed groups (tags); user-only; supports `-"
+  },
+  "im +feed-group-list-item": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List feed cards in a feed group (tag); user-only; enriches e"
+  },
+  "im +feed-group-query-item": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Look up specific feed cards in a feed group (tag) by ID; use"
+  },
+  "im +feed-shortcut-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add chats to the user's feed shortcuts; user-only; batch up "
+  },
+  "im +feed-shortcut-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List one page of the user's feed shortcuts; user-only; first"
+  },
+  "im +feed-shortcut-remove": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Remove chats from the user's feed shortcuts; user-only; batc"
+  },
+  "im +flag-cancel": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Cancel (remove) a bookmark. When no --flag-type is given, be"
+  },
+  "im +flag-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a bookmark on a message; user-only; defaults to messa"
+  },
+  "im +flag-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List bookmarks; user-only; auto-enriches feed-type thread en"
+  },
+  "im +message-read-users": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List users who have read one message; the caller must still "
+  },
+  "im +messages-edit": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Edit a sent text or rich-text message, optionally updating i"
+  },
+  "im +messages-mget": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch get messages by IDs; user/bot; fetches up to 50 om_ me"
+  },
+  "im +messages-read-status": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch query whether the current user has read up to 50 messa"
+  },
+  "im +messages-reply": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Reply to a message (supports thread replies); user/bot; supp"
+  },
+  "im +messages-search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search messages across chats (supports keyword, sender, time"
+  },
+  "im +messages-send": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Send a message to a chat or direct message; user/bot; sends "
+  },
+  "im +threads-messages-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List messages in a thread; user/bot; accepts om_/omt_ input,"
+  },
+  "im chat.join_requests handle": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat.membership_application:write"
+   ],
+   "summary": "批量审批入群申请（approve/reject，仅群主/管理员，user_access_token）。Approve o"
+  },
+  "im chat.join_requests list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat.membership_application:read"
+   ],
+   "summary": "列出群的待审批入群申请（仅群主/管理员，user_access_token）。List pending join req"
+  },
+  "im chat.managers add_managers": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.managers:write_only"
+   ],
+   "summary": "Specify group administrators. Identity: supports `user` and "
+  },
+  "im chat.managers delete_managers": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.managers:write_only"
+   ],
+   "summary": "Delete group administrators. Identity: supports `user` and `"
+  },
+  "im chat.members bots": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat:readonly",
+    "im:chat",
+    "im:chat.group_info:readonly",
+    "im:chat.members:read"
+   ],
+   "summary": "获取群内机器人列表。Identity: supports `user` and `bot`; the caller mu"
+  },
+  "im chat.members create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.members:write_only"
+   ],
+   "summary": "Add users or bots to a group. Identity: supports `user` and "
+  },
+  "im chat.members delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.members:write_only"
+   ],
+   "summary": "Remove users or bots from a group. Identity: supports `user`"
+  },
+  "im chat.members get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat:readonly",
+    "im:chat",
+    "im:chat.group_info:readonly",
+    "im:chat.members:read"
+   ],
+   "summary": "Obtain group member list. Identity: supports `user` and `bot"
+  },
+  "im chat.moderation get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat:readonly",
+    "im:chat",
+    "im:chat.moderation:read"
+   ],
+   "summary": "Obtains the group member speech scopes. Identity: supports `"
+  },
+  "im chat.moderation update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat:moderation:write_only"
+   ],
+   "summary": "Updates group speech scopes. Identity: supports `user` and `"
+  },
+  "im chat.nickname delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.nickname:write"
+   ],
+   "summary": "Clear your own nickname in the chat (self-only). Identity: `"
+  },
+  "im chat.nickname get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat:read",
+    "im:chat:readonly",
+    "im:chat.nickname:read"
+   ],
+   "summary": "获取调用 user 自己在群里的群昵称（self-only）。未设置时返空串。Get your own nickname"
+  },
+  "im chat.nickname update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.nickname:write"
+   ],
+   "summary": "设置或更新调用 user 自己在群里的群昵称（self-only，非空字符串；清空请用 DELETE）。Set or u"
+  },
+  "im chat.user_setting batch_query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat:read",
+    "im:chat:readonly",
+    "im:chat",
+    "im:chat.user_setting:read"
+   ],
+   "summary": "批量查询当前用户在群内的个人偏好设置 (e.g. `is_muted` mutes normal messages, `"
+  },
+  "im chat.user_setting batch_update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat.user_setting:write"
+   ],
+   "summary": "批量更新当前用户在群内的个人偏好设置 (e.g. `is_muted` mutes normal messages, `"
+  },
+  "im chats create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat:create",
+    "im:chat:create_by_user"
+   ],
+   "summary": "Create a group. Identity: `bot` only (`tenant_access_token`)"
+  },
+  "im chats get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat:readonly",
+    "im:chat",
+    "im:chat:read"
+   ],
+   "summary": "Obtain group information. Identity: supports `user` and `bot"
+  },
+  "im chats link": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat:readonly",
+    "im:chat",
+    "im:chat:read"
+   ],
+   "summary": "Get group share link. Identity: supports `user` and `bot`; t"
+  },
+  "im chats update": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:chat",
+    "im:chat:update"
+   ],
+   "summary": "Update group information. Identity: supports `user` and `bot"
+  },
+  "im feed.groups batch_add_item": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:feed_group_v1:write"
+   ],
+   "summary": "Batch add feed cards to a feed group. Identity: `user` only "
+  },
+  "im feed.groups batch_query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:feed_group_v1:read"
+   ],
+   "summary": "Batch query feed groups. Identity: `user` only (`user_access"
+  },
+  "im feed.groups batch_remove_item": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:feed_group_v1:write"
+   ],
+   "summary": "Batch remove feed cards from a feed group. Identity: `user` "
+  },
+  "im feed.groups create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:feed_group_v1:write"
+   ],
+   "summary": "Create a feed group. Identity: `user` only (`user_access_tok"
+  },
+  "im feed.groups delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:feed_group_v1:write"
+   ],
+   "summary": "Delete a feed group. Identity: `user` only (`user_access_tok"
+  },
+  "im feed.groups update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:feed_group_v1:write"
+   ],
+   "summary": "Update a feed group. Identity: `user` only (`user_access_tok"
+  },
+  "im files create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:resource:upload",
+    "im:resource"
+   ],
+   "summary": "Upload file. Identity: supports `user` and `bot`; user ident"
+  },
+  "im files folder": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message.history:readonly",
+    "im:message:readonly",
+    "im:message"
+   ],
+   "summary": "获取消息或消息链接中资源文件夹的子文件列表。recursive=false 仅返回给定 file_key 的一层子项（f"
+  },
+  "im images create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:resource:upload",
+    "im:resource"
+   ],
+   "summary": "Upload image. Identity: supports `user` and `bot`; user iden"
+  },
+  "im messages delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:recall",
+    "im:message",
+    "im:message:send_as_bot"
+   ],
+   "summary": "Recall message. Identity: supports `user` and `bot`; for `bo"
+  },
+  "im messages forward": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:send_as_bot",
+    "im:message"
+   ],
+   "summary": "Forward a message. Identity: supports `user` and `bot`"
+  },
+  "im messages merge_forward": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "im:message:send_as_bot",
+    "im:message"
+   ],
+   "summary": "Merge and forward messages. Identity: `bot` only (`tenant_ac"
+  },
+  "im messages patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:update",
+    "im:message",
+    "im:message:send_as_bot"
+   ],
+   "summary": "Update sent message card. Update an interactive message card"
+  },
+  "im messages read_status": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "im:message:get_as_user",
+    "im:message",
+    "im:message:readonly"
+   ],
+   "summary": "批量查询当前用户对消息的已读状态。Identity: `user` only (`user_access_token`)"
+  },
+  "im messages read_users": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:basic",
+    "im:message:readonly",
+    "im:message",
+    "im:message:get_as_user"
+   ],
+   "summary": "Query the read status of a message as the sender. Identity: "
+  },
+  "im messages urgent_app": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "im:message.urgent",
+    "im:message.urgent:app_send"
+   ],
+   "summary": "Send buzz messages in apps. Identity: `bot` only (`tenant_ac"
+  },
+  "im messages urgent_phone": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "im:message.urgent:phone",
+    "im:message.urgent:phone_send"
+   ],
+   "summary": "Send buzz messages via phone call. Identity: `bot` only (`te"
+  },
+  "im messages urgent_sms": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "im:message.urgent:sms",
+    "im:message.urgent:sms_send"
+   ],
+   "summary": "Send buzz messages via SMS. Identity: `bot` only (`tenant_ac"
+  },
+  "im pins create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:send_as_bot",
+    "im:message",
+    "im:message.pins:write_only"
+   ],
+   "summary": "Pin a message. Identity: supports `user` and `bot`"
+  },
+  "im pins delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:send_as_bot",
+    "im:message",
+    "im:message.pins:write_only"
+   ],
+   "summary": "Unpin a message. Identity: supports `user` and `bot`"
+  },
+  "im pins list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:readonly",
+    "im:message",
+    "im:message.pins:read"
+   ],
+   "summary": "Get pins in group. Identity: supports `user` and `bot`"
+  },
+  "im reactions batch_query": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:readonly",
+    "im:message.reactions:read"
+   ],
+   "summary": "Batch list message reactions. Identity: supports `user` and "
+  },
+  "im reactions create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message",
+    "im:message.reactions:write_only"
+   ],
+   "summary": "Add a reaction for a message. Identity: supports `user` and "
+  },
+  "im reactions delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message",
+    "im:message.reactions:write_only"
+   ],
+   "summary": "Delete a reaction for a message. Identity: supports `user` a"
+  },
+  "im reactions list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:readonly",
+    "im:message.reactions:read"
+   ],
+   "summary": "List message reactions. Identity: supports `user` and `bot`;"
+  },
+  "im threads forward": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "im:message:send_as_bot",
+    "im:message"
+   ],
+   "summary": "Forward a thread. Identity: supports `user` and `bot`"
+  },
+  "mail +decline-receipt": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Dismiss the read-receipt request banner on an incoming mail "
+  },
+  "mail +draft-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a brand-new mail draft from scratch (NOT for reply or"
+  },
+  "mail +draft-edit": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Use when updating an existing mail draft without sending it."
+  },
+  "mail +draft-send": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Send one or more existing mail drafts sequentially. Calls PO"
+  },
+  "mail +forward": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Forward a message and save as draft (default). Use --confirm"
+  },
+  "mail +lint-html": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Lint mail HTML body for compatibility / safety / Larksuite-n"
+  },
+  "mail +message": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Use only when reading full content for one email by one mess"
+  },
+  "mail +message-modify": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Modify existing mail messages by adding/removing label IDs o"
+  },
+  "mail +message-trash": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Soft-delete existing mail messages. Batches message IDs in g"
+  },
+  "mail +messages": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Use when reading full content for multiple emails by message"
+  },
+  "mail +reply": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Reply to a message and save as draft (default). Use --confir"
+  },
+  "mail +reply-all": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Reply to all recipients and save as draft (default). Use --c"
+  },
+  "mail +rule-create": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Create a mailbox rule from semantic condition/action aliases"
+  },
+  "mail +rule-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete one mailbox rule. Without --yes, the shortcut fetches"
+  },
+  "mail +rule-disable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Disable one mailbox rule while preserving unknown raw condit"
+  },
+  "mail +rule-enable": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Enable one mailbox rule while preserving unknown raw conditi"
+  },
+  "mail +rule-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get one mailbox rule by rule_id by scanning the rules collec"
+  },
+  "mail +rule-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List mailbox rules with semantic aliases, Chinese descriptio"
+  },
+  "mail +rule-reorder": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Reorder mailbox rules by full rule_id list or by moving one "
+  },
+  "mail +rule-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Update one mailbox rule by reading the current rule and pres"
+  },
+  "mail +send": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Compose a new email and save as draft (default). Use --confi"
+  },
+  "mail +send-receipt": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Send a read-receipt reply for an incoming message that reque"
+  },
+  "mail +share-to-chat": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Share an email or thread as a card to a Lark IM chat."
+  },
+  "mail +signature": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List or view email signatures with default usage info."
+  },
+  "mail +template-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a personal mail template. Scans HTML <img src> local "
+  },
+  "mail +template-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing mail template. Supports --inspect (read-o"
+  },
+  "mail +thread": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Use when querying a full mail conversation/thread by thread "
+  },
+  "mail +thread-modify": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Modify existing mail threads by adding/removing label IDs or"
+  },
+  "mail +thread-trash": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Soft-delete existing mail threads. Batches thread IDs in gro"
+  },
+  "mail +triage": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List mail summaries (date/from/subject/message_id). Use --qu"
+  },
+  "mail +watch": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Watch for incoming mail events via WebSocket (requires scope"
+  },
+  "mail multi_entity search": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox:readonly"
+   ],
+   "summary": "Search contacts for composing email"
+  },
+  "mail user_mailbox.drafts cancel_scheduled_send": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:send"
+   ],
+   "summary": "Cancel scheduled transmission"
+  },
+  "mail user_mailbox.drafts create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Create draft"
+  },
+  "mail user_mailbox.drafts delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Delete draft"
+  },
+  "mail user_mailbox.drafts get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Get draft content"
+  },
+  "mail user_mailbox.drafts list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "List of drafts"
+  },
+  "mail user_mailbox.drafts send": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:send"
+   ],
+   "summary": "Send draft"
+  },
+  "mail user_mailbox.drafts update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Update draft"
+  },
+  "mail user_mailbox.event subscribe": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:event"
+   ],
+   "summary": "Subscribe to mail events"
+  },
+  "mail user_mailbox.event subscription": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:event"
+   ],
+   "summary": "Get Subscription Status"
+  },
+  "mail user_mailbox.event unsubscribe": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:event"
+   ],
+   "summary": "Cancel Subscribe"
+  },
+  "mail user_mailbox.folders create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.folder:write"
+   ],
+   "summary": "Create Email Folder"
+  },
+  "mail user_mailbox.folders delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.folder:write"
+   ],
+   "summary": "Delete Email Folder"
+  },
+  "mail user_mailbox.folders get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.folder:write",
+    "mail:user_mailbox.folder:read"
+   ],
+   "summary": "Get mailbox folder information"
+  },
+  "mail user_mailbox.folders list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.folder:write",
+    "mail:user_mailbox.folder:read"
+   ],
+   "summary": "List Email Folders"
+  },
+  "mail user_mailbox.folders patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.folder:write"
+   ],
+   "summary": "Update Email Folder"
+  },
+  "mail user_mailbox.labels create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Create label"
+  },
+  "mail user_mailbox.labels delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Delete label"
+  },
+  "mail user_mailbox.labels get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify",
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Get label information"
+  },
+  "mail user_mailbox.labels list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly",
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "List label"
+  },
+  "mail user_mailbox.labels patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Update label"
+  },
+  "mail user_mailbox.mail_contacts create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.mail_contact:write"
+   ],
+   "summary": "Create Email Contact"
+  },
+  "mail user_mailbox.mail_contacts delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.mail_contact:write"
+   ],
+   "summary": "Delete Email Contact"
+  },
+  "mail user_mailbox.mail_contacts list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.mail_contact:write",
+    "mail:user_mailbox.mail_contact:read"
+   ],
+   "summary": "List Email Contacts"
+  },
+  "mail user_mailbox.mail_contacts patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.mail_contact:write"
+   ],
+   "summary": "Modify Email Contact's Info"
+  },
+  "mail user_mailbox.message.attachments download_url": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message.body:read"
+   ],
+   "summary": "Get Attachment Download Links"
+  },
+  "mail user_mailbox.messages batch_get": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Batch get email details"
+  },
+  "mail user_mailbox.messages batch_modify": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Batch Modify Mail Message"
+  },
+  "mail user_mailbox.messages batch_trash": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Batch Trash Mail Message"
+  },
+  "mail user_mailbox.messages get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Get Email Details"
+  },
+  "mail user_mailbox.messages list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "List Emails"
+  },
+  "mail user_mailbox.messages modify": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Modify Mail message"
+  },
+  "mail user_mailbox.messages send_status": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "查询邮件发送状态"
+  },
+  "mail user_mailbox.messages trash": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Trash Mail Message"
+  },
+  "mail user_mailbox.rules create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.rule:write"
+   ],
+   "summary": "Create Auto Filter"
+  },
+  "mail user_mailbox.rules delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.rule:write"
+   ],
+   "summary": "Delete Auto Filter"
+  },
+  "mail user_mailbox.rules list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.rule:write",
+    "mail:user_mailbox.rule:read"
+   ],
+   "summary": "List Auto Filters"
+  },
+  "mail user_mailbox.rules reorder": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.rule:write"
+   ],
+   "summary": "Reorder Auto Filters"
+  },
+  "mail user_mailbox.rules update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.rule:write"
+   ],
+   "summary": "Update Auto Filter"
+  },
+  "mail user_mailbox.sent_messages get_recall_detail": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Check the progress of email withdrawal"
+  },
+  "mail user_mailbox.sent_messages recall": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Withdraw a sent email"
+  },
+  "mail user_mailbox.settings send_as": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox:readonly",
+    "mail:user_mailbox"
+   ],
+   "summary": "List send-as mailboxes"
+  },
+  "mail user_mailbox.template.attachments download_url": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "获取指定邮件模板下的附件下载链接。用于在已知模板 ID 与附件 ID 的场景下，二次获取附件的有效访问 URL，便于在用"
+  },
+  "mail user_mailbox.templates create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "在指定用户邮箱下创建一份可复用的个人邮件模板。请求时需传入完整的模板对象（含名称、主题、正文、收件信息、附件等），创建成"
+  },
+  "mail user_mailbox.templates delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "永久删除指定用户邮箱下的某个个人邮件模板。删除操作不可恢复，删除后该模板将无法在「列出邮件模板」「获取邮件模板」等接口中"
+  },
+  "mail user_mailbox.templates get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly",
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "获取指定邮件模板的完整详情，包括模板名称、主题、正文（HTML 或纯文本）、收件人/抄送/密送地址、附件信息等所有字段。"
+  },
+  "mail user_mailbox.templates list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly",
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "列出指定用户邮箱下的全部个人邮件模板基本信息（一次性返回，不分页），常用于在编辑或发送邮件场景下展示可选模板列表。如需获"
+  },
+  "mail user_mailbox.templates update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "以全量替换的方式更新指定邮件模板的所有字段（包括名称、主题、正文、附件、收件信息等）。本接口为「全量更新」语义：请求时需"
+  },
+  "mail user_mailbox.threads batch_modify": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Batch Modify Mail Threads"
+  },
+  "mail user_mailbox.threads batch_trash": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Batch Trash Mail Thread"
+  },
+  "mail user_mailbox.threads get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Get Mail Thread Message List"
+  },
+  "mail user_mailbox.threads list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "List Mail Thread"
+  },
+  "mail user_mailbox.threads modify": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Modify Mail Thread"
+  },
+  "mail user_mailbox.threads trash": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:modify"
+   ],
+   "summary": "Delete Mail Thread"
+  },
+  "mail user_mailboxes accessible_mailboxes": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox",
+    "mail:user_mailbox:readonly"
+   ],
+   "summary": "List accessible mailboxes"
+  },
+  "mail user_mailboxes profile": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox:readonly"
+   ],
+   "summary": "Get user email information"
+  },
+  "mail user_mailboxes search": {
+   "risk": "write",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "mail:user_mailbox.message:readonly"
+   ],
+   "summary": "Search email"
+  },
+  "markdown +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a Markdown file in Drive"
+  },
+  "markdown +diff": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Compare remote Markdown versions or compare remote Markdown "
+  },
+  "markdown +fetch": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Fetch a Markdown file from Drive"
+  },
+  "markdown +overwrite": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Overwrite an existing Markdown file in Drive"
+  },
+  "markdown +patch": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Patch a Markdown file in Drive via fetch-local-replace-overw"
+  },
+  "mindnotes nodes create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mindnote:node:create"
+   ],
+   "summary": "创建/更新思维笔记节点"
+  },
+  "mindnotes nodes list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "mindnote:node:read"
+   ],
+   "summary": "获取思维笔记节点列表"
+  },
+  "minutes +detail": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Query minute details with selective artifact flags (summary,"
+  },
+  "minutes +download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download audio/video media file of a minute"
+  },
+  "minutes +search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search minutes by keyword, owners, participants, and time ra"
+  },
+  "minutes +speaker-replace": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Replace a speaker in a minute's transcript (rebind from one "
+  },
+  "minutes +summary": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Replace the AI summary of a minute"
+  },
+  "minutes +todo": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add, update, or delete todo item(s) on a minute"
+  },
+  "minutes +update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update a minute's title"
+  },
+  "minutes +upload": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload a media file token to generate a minute"
+  },
+  "minutes +word-replace": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch replace words in a minute's transcript"
+  },
+  "minutes minutes get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "minutes:minutes",
+    "minutes:minutes:readonly",
+    "minutes:minutes.basic:read"
+   ],
+   "summary": "Get minutes meta"
+  },
+  "note +detail": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get note detail (display type, document tokens) by note_id"
+  },
+  "okr +batch-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Batch create OKR objectives and key results with rollback on"
+  },
+  "okr +comment-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create or reply to an OKR comment"
+  },
+  "okr +comment-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete an OKR comment permanently"
+  },
+  "okr +comment-detail": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List all comments under an OKR cycle, grouped by target and "
+  },
+  "okr +comment-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an OKR comment by ID"
+  },
+  "okr +comment-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List comments attached to an OKR entity"
+  },
+  "okr +comment-patch": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an OKR comment"
+  },
+  "okr +comment-reopen": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Reopen an OKR comment"
+  },
+  "okr +comment-solve": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Solve an OKR comment"
+  },
+  "okr +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a single OKR objective or key result"
+  },
+  "okr +cycle-detail": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List objectives and key results under an OKR cycle"
+  },
+  "okr +cycle-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List okr cycles of a certain user"
+  },
+  "okr +indicator-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update the indicator current value for an objective or key r"
+  },
+  "okr +patch": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Patch an OKR objective or key result (content, notes, score,"
+  },
+  "okr +progress-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create an OKR progress"
+  },
+  "okr +progress-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete an OKR progress by ID"
+  },
+  "okr +progress-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get an OKR progress by ID"
+  },
+  "okr +progress-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List progress for an objective or key result"
+  },
+  "okr +progress-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an OKR progress"
+  },
+  "okr +reorder": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Adjust the position (order) of OKR objectives or key results"
+  },
+  "okr +upload-image": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload an image for use in OKR progress rich text"
+  },
+  "okr +weight": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Adjust the weight of OKR objectives or key results"
+  },
+  "okr alignments delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Delete OKR Alignment"
+  },
+  "okr alignments get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "Get OKR Alignment"
+  },
+  "okr categories list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.setting:read"
+   ],
+   "summary": "List all okr categories"
+  },
+  "okr cycle.objectives create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Create Objective in OKR Cycle"
+  },
+  "okr cycle.objectives list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "Get Objectives in OKR Cycle"
+  },
+  "okr cycles list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.period:readonly"
+   ],
+   "summary": "Get user OKR Cycle list"
+  },
+  "okr cycles objectives_position": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Update the positions of all Objectives in a user's OKR cycle"
+  },
+  "okr cycles objectives_weight": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Update the weights of all Objectives in a user's OKR cycle"
+  },
+  "okr indicators patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Update Indicator"
+  },
+  "okr key_result.indicators list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "Get Indicator of a Key Result"
+  },
+  "okr key_results delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Delete Key Result"
+  },
+  "okr key_results get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "Get Key Result"
+  },
+  "okr key_results patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Modify Key Result"
+  },
+  "okr objective.alignments create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Create Object Alignment"
+  },
+  "okr objective.alignments list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "List Alignment of an Objective"
+  },
+  "okr objective.indicators list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "Get Indicator of an Objective"
+  },
+  "okr objective.key_results create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Create Key Result of an Objective"
+  },
+  "okr objective.key_results list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "List Key Results of an Objective"
+  },
+  "okr objectives delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Delete Objective"
+  },
+  "okr objectives get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:readonly"
+   ],
+   "summary": "Get Objective"
+  },
+  "okr objectives key_results_position": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Update the positions of all Key Results of an Objective"
+  },
+  "okr objectives key_results_weight": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Update the weights of all Key Results of an Objective"
+  },
+  "okr objectives patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "okr:okr.content:writeonly"
+   ],
+   "summary": "Modify Objective"
+  },
+  "profile add": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Add a new profile"
+  },
+  "profile list": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "List all profiles"
+  },
+  "profile remove": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Remove a profile"
+  },
+  "profile rename": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Rename a profile"
+  },
+  "profile use": {
+   "risk": "write",
+   "kind": "command",
+   "danger": false,
+   "summary": "Switch to a profile (use '-' to toggle back)"
+  },
+  "sheets +batch-chart-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create multiple independent basic charts through one batch r"
+  },
+  "sheets +batch-chart-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update multiple independent chart configurations or data sou"
+  },
+  "sheets +batch-update": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Execute a batch of write shortcuts in one request; fail-fast"
+  },
+  "sheets +cells-batch-clear": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Clear content/formats across many sheet-prefixed ranges in o"
+  },
+  "sheets +cells-batch-set-style": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Apply one style block to many sheet-prefixed ranges in one b"
+  },
+  "sheets +cells-clear": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Clear cell content, formats, or both within a range (irrever"
+  },
+  "sheets +cells-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Read one or more cell ranges with values, formulas, and opti"
+  },
+  "sheets +cells-merge": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Merge cells in a range."
+  },
+  "sheets +cells-replace": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Find and replace text in a spreadsheet (case / regex / whole"
+  },
+  "sheets +cells-search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Find cells matching --find in a spreadsheet (case / regex / "
+  },
+  "sheets +cells-set": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Write values / formulas / styles / comments / data validatio"
+  },
+  "sheets +cells-set-image": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Embed a local image into a single cell (uploads via drive, t"
+  },
+  "sheets +cells-set-style": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Apply style flags to every cell in a range (values / formula"
+  },
+  "sheets +cells-unmerge": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Unmerge cells in a range."
+  },
+  "sheets +changeset-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Fetch the raw changeset (edit actions) between two versions,"
+  },
+  "sheets +chart-config-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update common chart titles, axes, legend, labels, stacking, "
+  },
+  "sheets +chart-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a chart object via the manage_*_object tool."
+  },
+  "sheets +chart-create-basic": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a basic chart from a chart type and data range; the s"
+  },
+  "sheets +chart-data-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing chart's data range or direction while pre"
+  },
+  "sheets +chart-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a chart object (irreversible)."
+  },
+  "sheets +chart-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List charts on a sheet, optionally filtered to a single char"
+  },
+  "sheets +chart-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing chart object (read-modify-write; consult "
+  },
+  "sheets +cols-resize": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Resize columns in pixels (NOT Excel char units): --range + -"
+  },
+  "sheets +cond-format-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a cond-format object via the manage_*_object tool."
+  },
+  "sheets +cond-format-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a cond-format object (irreversible)."
+  },
+  "sheets +cond-format-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List conditional format rules on a sheet, optionally filtere"
+  },
+  "sheets +cond-format-result-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Read conditional format results as range coordinates and cel"
+  },
+  "sheets +cond-format-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing cond-format object (read-modify-write; co"
+  },
+  "sheets +csv-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Read a range as CSV (with [row=N] line prefix by default)."
+  },
+  "sheets +csv-put": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Paste RFC-4180 CSV into a sheet at --start-cell (values or f"
+  },
+  "sheets +dim-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete rows or columns (irreversible)."
+  },
+  "sheets +dim-freeze": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Freeze the first N rows and/or columns; this sets the whole "
+  },
+  "sheets +dim-group": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Group rows or columns into an outline (collapsible)."
+  },
+  "sheets +dim-hide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Hide rows or columns within a range."
+  },
+  "sheets +dim-insert": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Insert blank rows or columns at a given position."
+  },
+  "sheets +dim-move": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Move a contiguous block of rows or columns to a new position"
+  },
+  "sheets +dim-ungroup": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Remove a row/column outline group."
+  },
+  "sheets +dim-unhide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Unhide rows or columns within a range."
+  },
+  "sheets +dropdown-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Clear dropdowns from many sheet-prefixed ranges in one batch"
+  },
+  "sheets +dropdown-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Read the dropdown / data-validation configuration on a range"
+  },
+  "sheets +dropdown-set": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Attach a dropdown / data-validation list to every cell in --"
+  },
+  "sheets +dropdown-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Install or replace one dropdown across many sheet-prefixed r"
+  },
+  "sheets +filter-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a sheet-level filter (one per sheet)."
+  },
+  "sheets +filter-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Remove the sheet-level filter (irreversible)."
+  },
+  "sheets +filter-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List active sheet-level filters across the workbook (or one "
+  },
+  "sheets +filter-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update the sheet-level filter (overwrite rules + range)."
+  },
+  "sheets +filter-view-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a filter-view object via the manage_*_object tool."
+  },
+  "sheets +filter-view-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a filter-view object (irreversible)."
+  },
+  "sheets +filter-view-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List filter views on a sheet, optionally filtered to a singl"
+  },
+  "sheets +filter-view-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing filter-view object (read-modify-write; co"
+  },
+  "sheets +float-image-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a floating image (from a local --image path, or an ex"
+  },
+  "sheets +float-image-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a float-image object (irreversible)."
+  },
+  "sheets +float-image-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List floating images on a sheet, optionally filtered to a si"
+  },
+  "sheets +float-image-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing floating image (target by --float-image-i"
+  },
+  "sheets +formula-verify": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Scan formulas / cell errors and return a recalc.py-shaped st"
+  },
+  "sheets +history-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List a spreadsheet's edit history versions (history_version_"
+  },
+  "sheets +history-revert": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Revert a spreadsheet to a given history version (asynchronou"
+  },
+  "sheets +history-revert-status": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Poll the status of a history revert (in-progress / success /"
+  },
+  "sheets +pivot-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a pivot object via the manage_*_object tool."
+  },
+  "sheets +pivot-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a pivot object (irreversible)."
+  },
+  "sheets +pivot-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List pivot tables on a sheet, optionally filtered to a singl"
+  },
+  "sheets +pivot-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing pivot object (read-modify-write; consult "
+  },
+  "sheets +range-copy": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Copy a range to a new location (--paste-type controls what i"
+  },
+  "sheets +range-fill": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Autofill a target range from a source template (copy / linea"
+  },
+  "sheets +range-move": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Cut a range and paste it at a new location (optionally cross"
+  },
+  "sheets +range-sort": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Sort rows within a range by one or more columns."
+  },
+  "sheets +revision-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get the spreadsheet's current document revision (version num"
+  },
+  "sheets +rows-resize": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Resize rows in pixels: --range + --height <px> for one unifo"
+  },
+  "sheets +sheet-copy": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Duplicate a sub-sheet, optionally renaming and repositioning"
+  },
+  "sheets +sheet-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a new sub-sheet with an optional position and initial"
+  },
+  "sheets +sheet-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a sub-sheet (irreversible)."
+  },
+  "sheets +sheet-hide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Hide a sub-sheet from the tabs bar."
+  },
+  "sheets +sheet-hide-gridline": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Hide gridlines on a sub-sheet."
+  },
+  "sheets +sheet-info": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get a sub-sheet's layout metadata: row heights, column width"
+  },
+  "sheets +sheet-move": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Move a sub-sheet to a new position."
+  },
+  "sheets +sheet-rename": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rename a sub-sheet."
+  },
+  "sheets +sheet-set-tab-color": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Set or clear the tab color of a sub-sheet."
+  },
+  "sheets +sheet-show-gridline": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Show gridlines on a sub-sheet."
+  },
+  "sheets +sheet-unhide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Restore a hidden sub-sheet."
+  },
+  "sheets +sparkline-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a sparkline object via the manage_*_object tool."
+  },
+  "sheets +sparkline-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a sparkline object (irreversible)."
+  },
+  "sheets +sparkline-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List sparkline groups on a sheet, optionally filtered by gro"
+  },
+  "sheets +sparkline-update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing sparkline object (read-modify-write; cons"
+  },
+  "sheets +styles-put": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Apply one declarative visual spec (styles/merges/row-col siz"
+  },
+  "sheets +table-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Read sheets back into the typed table protocol (mirror of +t"
+  },
+  "sheets +table-put": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Write a typed table (columns with types + rows) into an exis"
+  },
+  "sheets +workbook-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a new spreadsheet, optionally pre-filled with untyped"
+  },
+  "sheets +workbook-export": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Export a spreadsheet to xlsx or a single sheet to csv (async"
+  },
+  "sheets +workbook-import": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Import a local xlsx/xls/csv file as a new spreadsheet (async"
+  },
+  "sheets +workbook-info": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List sub-sheets of a spreadsheet with metadata (sheet_id, ti"
+  },
+  "sheets spreadsheet.sheet.filters create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "sheets:spreadsheet",
+    "drive:drive",
+    "sheets:spreadsheet:write_only"
+   ],
+   "summary": "Create a filter"
+  },
+  "sheets spreadsheet.sheet.filters delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "sheets:spreadsheet",
+    "drive:drive",
+    "sheets:spreadsheet:write_only"
+   ],
+   "summary": "Delete a filter"
+  },
+  "sheets spreadsheet.sheet.filters get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "drive:drive:readonly",
+    "sheets:spreadsheet",
+    "sheets:spreadsheet:readonly",
+    "sheets:spreadsheet:read"
+   ],
+   "summary": "Obtain filter"
+  },
+  "sheets spreadsheet.sheet.filters update": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "sheets:spreadsheet",
+    "drive:drive",
+    "sheets:spreadsheet:write_only"
+   ],
+   "summary": "Update a filter"
+  },
+  "sheets spreadsheet.sheets find": {
+   "risk": "read",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "sheets:spreadsheet",
+    "sheets:spreadsheet:readonly",
+    "drive:drive",
+    "drive:drive:readonly",
+    "sheets:spreadsheet:read"
+   ],
+   "summary": "Find cells"
+  },
+  "sheets spreadsheets create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "drive:drive",
+    "sheets:spreadsheet",
+    "sheets:spreadsheet:create"
+   ],
+   "summary": "Create a spreadsheet"
+  },
+  "sheets spreadsheets get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "sheets:spreadsheet",
+    "sheets:spreadsheet:readonly",
+    "drive:drive",
+    "drive:drive:readonly",
+    "sheets:spreadsheet.meta:read"
+   ],
+   "summary": "Get spreadsheet information"
+  },
+  "sheets spreadsheets patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "sheets:spreadsheet",
+    "drive:drive",
+    "sheets:spreadsheet.meta:write_only"
+   ],
+   "summary": "Modify spreadsheet properties"
+  },
+  "skills list": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "List skills, or list one layer under a skill path (like ls)"
+  },
+  "skills read": {
+   "risk": "read",
+   "kind": "command",
+   "danger": false,
+   "summary": "Print a skill's SKILL.md, or a file under the skill (raw mar"
+  },
+  "slides +add-slide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add one page to an existing presentation (<img src=\"@./local"
+  },
+  "slides +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a Lark Slides presentation"
+  },
+  "slides +delete-slide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Delete one page from a presentation by slide_id"
+  },
+  "slides +history-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List Slides presentation history versions"
+  },
+  "slides +history-revert": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Revert a Slides presentation to a historical version"
+  },
+  "slides +history-revert-status": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get Slides history revert task status"
+  },
+  "slides +media-download": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Download a Slides media file_token to a local image file"
+  },
+  "slides +media-upload": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Upload a local image to a slides presentation and return the"
+  },
+  "slides +replace-pages": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Rebuild multiple pages in a presentation: create each new pa"
+  },
+  "slides +replace-slide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Replace elements on a slide via block_replace / block_insert"
+  },
+  "slides +screenshot": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Save up to 10 slide screenshots to local files without print"
+  },
+  "slides +update-slide": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Apply a full <slide> XML to an existing slide, replacing the"
+  },
+  "slides +xml-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Fetch presentation XML or one slide XML"
+  },
+  "slides xml_presentation.history list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:read"
+   ],
+   "summary": "列出 XML 演示文稿历史版本"
+  },
+  "slides xml_presentation.history revert": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:update",
+    "slides:presentation:write_only"
+   ],
+   "summary": "按 history_version_id 发起 XML 演示文稿历史版本回滚任务"
+  },
+  "slides xml_presentation.history revert_status": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:read"
+   ],
+   "summary": "查询 XML 演示文稿历史回滚任务状态"
+  },
+  "slides xml_presentation.slide create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:update",
+    "slides:presentation:write_only"
+   ],
+   "summary": "在指定 XML 演示文稿下创建页面"
+  },
+  "slides xml_presentation.slide delete": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:update",
+    "slides:presentation:write_only"
+   ],
+   "summary": "在指定 XML 演示文稿下删除页面"
+  },
+  "slides xml_presentation.slide get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:read"
+   ],
+   "summary": "获取指定 XML 演示文稿的单个页面 XML 内容"
+  },
+  "slides xml_presentation.slide replace": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:update",
+    "slides:presentation:write_only"
+   ],
+   "summary": "对指定 XML 演示文稿页面进行元素级别的局部替换"
+  },
+  "slides xml_presentation.slide_image list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:screenshot"
+   ],
+   "summary": "获取幻灯片截图"
+  },
+  "slides xml_presentation.slide_image render": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:screenshot"
+   ],
+   "summary": "渲染页面截图为图片"
+  },
+  "slides xml_presentations create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:create"
+   ],
+   "summary": "以 XML 格式创建演示文稿"
+  },
+  "slides xml_presentations get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "slides:presentation:read"
+   ],
+   "summary": "读取演示文稿全文信息，XML 格式返回"
+  },
+  "task +assign": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "assign or remove task members"
+  },
+  "task +comment": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "add a comment to a task"
+  },
+  "task +complete": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "mark a task as complete"
+  },
+  "task +create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "create a task"
+  },
+  "task +followers": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "manage task followers"
+  },
+  "task +get-my-tasks": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List tasks assigned to me"
+  },
+  "task +get-related-tasks": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "list tasks related to me"
+  },
+  "task +reminder": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "manage task reminders"
+  },
+  "task +reopen": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "reopen a completed task"
+  },
+  "task +search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "search tasks"
+  },
+  "task +set-ancestor": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "set or clear a task ancestor"
+  },
+  "task +tasklist-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "create a tasklist and optionally add tasks"
+  },
+  "task +tasklist-members": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "manage tasklist members"
+  },
+  "task +tasklist-search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "search tasklists"
+  },
+  "task +tasklist-task-add": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "add tasks to a tasklist"
+  },
+  "task +update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "update task attributes"
+  },
+  "task +upload-attachment": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "upload a local file as an attachment to a task"
+  },
+  "task agent register_agent": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "task:task:writeonly",
+    "task:task:write",
+    "task:tasklist:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "注册/注销 AI 智能体"
+  },
+  "task agent update_agent_profile": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "task:task:writeonly",
+    "task:task:write",
+    "task:tasklist:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "## 功能介绍 更新任务代理的主页内容数据"
+  },
+  "task agent_task_step_info append_task_steps": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot"
+   ],
+   "scopes": [
+    "task:task:write",
+    "task:task:writeonly"
+   ],
+   "summary": "## 功能介绍 写入任务记录"
+  },
+  "task comments create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:comment:writeonly",
+    "task:comment:write"
+   ],
+   "summary": "创建评论"
+  },
+  "task comments delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:comment:delete",
+    "task:comment:write"
+   ],
+   "summary": "删除评论"
+  },
+  "task comments get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:comment:read",
+    "task:comment:write"
+   ],
+   "summary": "获取评论详情"
+  },
+  "task comments list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:comment:read",
+    "task:comment:write"
+   ],
+   "summary": "获取评论列表"
+  },
+  "task comments patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:comment:writeonly",
+    "task:comment:write"
+   ],
+   "summary": "更新评论"
+  },
+  "task custom_field_options create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:writeonly",
+    "task:tasklist:write",
+    "task:tasklist:read"
+   ],
+   "summary": "Create Custom Field Option"
+  },
+  "task custom_field_options patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "Update Custom Field Option"
+  },
+  "task custom_fields add": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:writeonly",
+    "task:custom_field:write"
+   ],
+   "summary": "Add Custom Field to Resource"
+  },
+  "task custom_fields create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:writeonly",
+    "task:custom_field:write"
+   ],
+   "summary": "Create Custom Field"
+  },
+  "task custom_fields get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:write",
+    "task:custom_field:read"
+   ],
+   "summary": "Get Custom Field"
+  },
+  "task custom_fields list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:read",
+    "task:custom_field:write"
+   ],
+   "summary": "List Custom Fields"
+  },
+  "task custom_fields patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:writeonly",
+    "task:custom_field:write"
+   ],
+   "summary": "Update Custom Field"
+  },
+  "task custom_fields remove": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:custom_field:writeonly",
+    "task:custom_field:write"
+   ],
+   "summary": "Remove Custom Field From Resource"
+  },
+  "task members add": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:personnel:writeonly",
+    "task:task:write"
+   ],
+   "summary": "Add Task Member"
+  },
+  "task members remove": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:personnel:writeonly",
+    "task:task:write"
+   ],
+   "summary": "Remove Task Member"
+  },
+  "task sections create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:section:writeonly",
+    "task:section:write"
+   ],
+   "summary": "Create Section"
+  },
+  "task sections delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:section:delete",
+    "task:section:write"
+   ],
+   "summary": "Delete Section"
+  },
+  "task sections get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:section:write",
+    "task:section:read"
+   ],
+   "summary": "Get Section"
+  },
+  "task sections list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:section:write",
+    "task:section:read"
+   ],
+   "summary": "List Sections"
+  },
+  "task sections patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:section:writeonly",
+    "task:section:write"
+   ],
+   "summary": "Patch Section"
+  },
+  "task sections tasks": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:section:read",
+    "task:section:write"
+   ],
+   "summary": "List Tasks of Section"
+  },
+  "task subtasks create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:writeonly",
+    "task:task:write"
+   ],
+   "summary": "Create Subtask"
+  },
+  "task subtasks list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:read",
+    "task:task:write"
+   ],
+   "summary": "List Subtasks of Task"
+  },
+  "task tasklists add_members": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "Add tasklist members"
+  },
+  "task tasklists create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "Create Tasklist"
+  },
+  "task tasklists delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:delete",
+    "task:tasklist:write"
+   ],
+   "summary": "Delete Tasklist"
+  },
+  "task tasklists get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:read",
+    "task:tasklist:write"
+   ],
+   "summary": "Get Tasklist Details"
+  },
+  "task tasklists list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:read",
+    "task:tasklist:write"
+   ],
+   "summary": "List Tasklists"
+  },
+  "task tasklists patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "Patch Tasklist"
+  },
+  "task tasklists remove_members": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:writeonly",
+    "task:tasklist:write"
+   ],
+   "summary": "Remove Tasklist Members"
+  },
+  "task tasklists tasks": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:tasklist:read",
+    "task:tasklist:write"
+   ],
+   "summary": "Get Tasks of Tasklist"
+  },
+  "task tasks create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:write",
+    "task:task:writeonly"
+   ],
+   "summary": "Create Task"
+  },
+  "task tasks delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:delete",
+    "task:task:write"
+   ],
+   "summary": "Delete Task"
+  },
+  "task tasks get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:read",
+    "task:task:write"
+   ],
+   "summary": "Get Task Details"
+  },
+  "task tasks list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:read",
+    "task:task:write"
+   ],
+   "summary": "List Tasks"
+  },
+  "task tasks patch": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "task:task:writeonly",
+    "task:task:write"
+   ],
+   "summary": "Patch Task"
+  },
+  "update": {
+   "risk": "high-risk-write",
+   "kind": "command",
+   "danger": true,
+   "summary": "Update lark-cli using the active update source."
+  },
+  "vc +detail": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get meeting details including note_id and minute_token by me"
+  },
+  "vc +meeting-countdown": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Operate an in-meeting countdown"
+  },
+  "vc +meeting-events": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List meeting events by meeting ID"
+  },
+  "vc +meeting-invite": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Invite selected or all eligible users as the app bot"
+  },
+  "vc +meeting-join": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Join a meeting by meeting number (bot join)"
+  },
+  "vc +meeting-leave": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Leave a meeting by meeting ID"
+  },
+  "vc +meeting-list-active": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List active meetings for the current identity or target user"
+  },
+  "vc +meeting-screenshot": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Capture a video meeting screenshot"
+  },
+  "vc +recording": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Query minute_token from meeting-ids or calendar-event-ids"
+  },
+  "vc +search": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Search meeting records by keyword, time range, participant, "
+  },
+  "vc meeting get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "vc:meeting:readonly",
+    "vc:meeting.meetingevent:read"
+   ],
+   "summary": "Obtain meeting details"
+  },
+  "whiteboard +export": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Export an existing whiteboard as preview image, SVG, source "
+  },
+  "whiteboard +update": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Update an existing whiteboard in lark document with mermaid,"
+  },
+  "wiki +delete-space": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a wiki space, polling the async delete task when need"
+  },
+  "wiki +member-add": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Add a member to a wiki space"
+  },
+  "wiki +member-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List members of a wiki space"
+  },
+  "wiki +move": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Move a wiki node, or move a Drive document into Wiki"
+  },
+  "wiki +node-copy": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Copy a wiki node to a target space or parent node"
+  },
+  "wiki +node-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a wiki node with automatic space resolution"
+  },
+  "wiki +node-delete": {
+   "risk": "high-risk-write",
+   "kind": "shortcut",
+   "danger": true,
+   "summary": "Delete a wiki node, polling the async delete task when neede"
+  },
+  "wiki +node-get": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Get wiki node details by node_token, obj_token, or Lark URL"
+  },
+  "wiki +node-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List wiki nodes in a space or under a parent node"
+  },
+  "wiki +space-create": {
+   "risk": "write",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "Create a wiki space"
+  },
+  "wiki +space-list": {
+   "risk": "read",
+   "kind": "shortcut",
+   "danger": false,
+   "summary": "List wiki spaces accessible to the caller"
+  },
+  "wiki members create": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:member:create"
+   ],
+   "summary": "Add Wiki space members"
+  },
+  "wiki members delete": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:member:update"
+   ],
+   "summary": "Delete Wiki space members"
+  },
+  "wiki members list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:wiki:readonly",
+    "wiki:member:retrieve"
+   ],
+   "summary": "Obtain Wiki space members"
+  },
+  "wiki nodes copy": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:node:copy"
+   ],
+   "summary": "Create a node copy in Wiki"
+  },
+  "wiki nodes create": {
+   "risk": "write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:node:create"
+   ],
+   "summary": "Create node in Wiki"
+  },
+  "wiki nodes list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:wiki:readonly",
+    "wiki:node:retrieve"
+   ],
+   "summary": "Get the list of child nodes in Wiki"
+  },
+  "wiki spaces create": {
+   "risk": "high-risk-write",
+   "kind": "api",
+   "danger": true,
+   "identity": [
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:space:write_only"
+   ],
+   "summary": "Create Wiki space"
+  },
+  "wiki spaces get": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:wiki:readonly",
+    "wiki:space:read"
+   ],
+   "summary": "Access to Wiki space information"
+  },
+  "wiki spaces get_node": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:wiki:readonly",
+    "wiki:node:read"
+   ],
+   "summary": "Get Wiki node information"
+  },
+  "wiki spaces list": {
+   "risk": "read",
+   "kind": "api",
+   "danger": false,
+   "identity": [
+    "bot",
+    "user"
+   ],
+   "scopes": [
+    "wiki:wiki",
+    "wiki:wiki:readonly",
+    "wiki:space:retrieve"
+   ],
+   "summary": "Get a list of Wiki spaces"
+  }
+ }
+}

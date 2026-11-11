@@ -25,7 +25,9 @@ except Exception:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOK = os.path.join(ROOT, "tools", "approval_hook.py")
 EFFECTS = os.path.join(ROOT, "interop", "dws_effects.json")
+LARK_EFFECTS = os.path.join(ROOT, "interop", "lark_effects.json")
 DOC = os.path.join(ROOT, "interop", "dingtalk.md")
+DOC_LARK = os.path.join(ROOT, "interop", "feishu.md")
 
 FAIL = []
 
@@ -56,11 +58,30 @@ def test_allow():
         ("dws todo +get --task-id 123", "按 id 查详情"),
         ("cd D:/work && dws todo task list", "cd 是无害外壳"),
         ("dws todo +get-my-tasks | head -20", "管道下端是纯过滤器"),
+        ("dws todo +get-my-tasks 2>&1", "fd 复制不写文件，不算重定向"),
+        ("dws todo +get-my-tasks 2>&1 | head -20", "fd 复制 + 纯过滤器"),
+        ("dws todo +get-my-tasks 1>&2", "另一种 fd 复制"),
         ("dws todo +create --help", "写命令带 --help 只打印帮助，不执行"),
+        ("dws todo +create --help 2>&1 | head -20",
+         "fd 复制不能把 --help 从'最后一个参数'挤开"),
+        ("lark-cli task +create --help 2>&1", "同上（飞书侧那次 9 张卡里的 bug）"),
         ("dws todo --help", "分组帮助"),
         ("dws schema todo --compact", "schema 是本地契约，不联网"),
         ("dws --help", "只有全局帮助"),
         ("dws contact user get --userid abc", "通讯录查询"),
+        ("echo hello", "echo 只往 stdout 打字"),
+        ("echo dws todo +create", "echo 只是把后面的字打出来，不会执行 dws"),
+        ("date", "纯读本地命令"),
+        ('date "+%Y-%m-%d %A %H:%M %Z"', "带格式串"),
+        ("date -u", "带只读参数"),
+        ("pwd", "纯读本地命令"),
+        ("printf '%s\\n' hi", "printf 是 shell 内建"),
+        ("lark-cli --help; echo '---- api help ----'; lark-cli api --help",
+         "两个帮助 + 分隔线，整条都是读"),
+        ("MSYS_NO_PATHCONV=1 lark-cli calendar +agenda",
+         "Git Bash 路径改写变量不影响执行哪个程序"),
+        ("MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL=* dws todo +get-my-tasks",
+         "两个 MSYS 变量叠加"),
     ]
     real = shutil.which("dws")
     if real:
@@ -81,7 +102,10 @@ def test_ask():
         ("dws todo +get-my-tasks $(whoami)", "命令替换"),
         ("dws todo +get-my-tasks `whoami`", "反引号"),
         ("dws todo +get-my-tasks > out.json", "输出重定向"),
-        ("dws todo +get-my-tasks 2>&1", "任何重定向都按写处理"),
+        # fd 复制放宽之后，这三种形态仍然要拦 —— 别把放宽写成了放空
+        ("dws todo +get-my-tasks 2>&1 > out.json", "fd 复制之后还有真正的文件重定向"),
+        ("dws todo +get-my-tasks &> out.txt", "&> 是真正的重定向（不是 fd 复制）"),
+        ("dws todo +get-my-tasks 2>&1 & rm -rf /", "fd 复制之后还有后台符号"),
         ("dws todo +get-my-tasks & rm -rf /", "单独的 & 会再跑一条后台命令"),
         ('dws todo +get-my-tasks --jq "$(whoami)"', "双引号里的命令替换照样执行"),
         ("dws api /v1.0/todo/tasks", "raw OpenAPI 不在表内"),
@@ -89,9 +113,17 @@ def test_ask():
         ("dws", "没有子命令"),
         ("dws --dry-run todo +create", "全局参数写在子命令前，定位不到"),
         ("rm -rf /", "不是只读命令"),
-        ("echo dws todo +create", "第一个词不是 dws"),
+        ("grep dws todo list", "不是只读命令（grep 不带文件、也不是管道下端）"),
         ("dws todo +get-my-tasks | sh", "管道喂给 shell"),
         ("PATH=/tmp dws todo +get-my-tasks", "环境变量前缀可以换掉 dws 本体"),
+        ("MSYS_NO_PATHCONV=1 PATH=/tmp dws todo +get-my-tasks",
+         "叠了一个会影响执行的变量 ⇒ 整条按写"),
+        ("PYTHONPATH=/tmp lark-cli calendar +agenda", "不在无害清单里的前缀"),
+        ("MSYS_NO_PATHCONV=1", "只有前缀、没有命令"),
+        ("/tmp/echo hi", "带路径的同名程序不算内建（可以是任意东西）"),
+        ('date -s "2026-01-01"', "`date -s` 会改系统时间"),
+        ("date --set=2026-01-01", "另一种改时间的写法"),
+        ("/usr/bin/date", "带路径的 date 不认"),
         ("dws todo +get-my-tasks | sort -o out.txt", "过滤器带写文件选项"),
         ("dws todo +get-my-tasks 'unclosed", "引号没闭合"),
         ("python -c \"print(1)\"", "非白名单程序"),
@@ -101,6 +133,116 @@ def test_ask():
     for cmd, why in cases:
         ok, note = hook.classify_bash(cmd)
         check(f"弹卡 · {why}", not ok and bool(note), note if not ok else "竟然直放了")
+
+
+def test_lark():
+    """P1-4：飞书执行面。分类来源 = 官方 schema + 每条 --help 的 Risk 行。"""
+    print("\n== 飞书 lark-cli：直放 ==")
+    allow = [
+        ("lark-cli calendar +agenda", "快捷命令里的读"),
+        ("lark-cli calendar events get --calendar-id primary", "API 命令里的读"),
+        ("lark-cli auth status", "管理命令里的读"),
+        ("lark-cli config show", "看配置（secret 是打码的）"),
+        ("lark-cli doctor", "健康检查"),
+        ("lark-cli skills read lark-calendar", "读本地 skill 文档，不联网"),
+        ("lark-cli schema", "schema 是本地契约"),
+        ("lark-cli schema im messages delete", "查单条方法的参数"),
+        ("cd D:/work && lark-cli calendar +agenda", "cd 是无害外壳"),
+        ("lark-cli calendar +agenda | head -20", "管道下端是纯过滤器"),
+        ("lark-cli calendar +agenda 2>&1 | head -20", "模型最常用的写法，fd 复制不算重定向"),
+        ("lark-cli im +messages-send --help", "写命令带 --help 只打印帮助"),
+    ]
+    for cmd, why in allow:
+        ok, note = hook.classify_bash(cmd)
+        check(f"直放 · {why}", ok, "" if ok else f"被拦：{note}")
+
+    print("\n== 飞书 lark-cli：弹卡 ==")
+    ask = [
+        ("lark-cli im +messages-send --chat-id oc_x --text hi", "写操作"),
+        ("lark-cli im messages delete --message-id om_x", "high-risk-write"),
+        ("lark-cli api GET /open-apis/calendar/v4/calendars",
+         "通用 API 逃生舱 —— 官方整体标 write，不按 GET 猜"),
+        ("lark-cli auth login", "授权会写本地凭据"),
+        ("lark-cli update", "high-risk-write"),
+        ("lark-cli", "没有子命令"),
+        ("lark-cli --dry-run calendar +agenda", "全局参数写在子命令前，定位不到"),
+        ("lark-cli calendar +nope", "表外按写"),
+        ("lark-cli im +messages-send --chat-id oc_x --text hi && lark-cli calendar +agenda",
+         "多段里有写"),
+        ("grep lark-cli /dev/null", "不是只读命令（grep 不在管道下端）"),
+    ]
+    for cmd, why in ask:
+        ok, note = hook.classify_bash(cmd)
+        check(f"弹卡 · {why}", not ok and bool(note), note if not ok else "竟然直放了")
+
+    # 实测（2026-11-11）：模型习惯性加 `2>&1 | head`，以前卡面会显示「含 `>`」，
+    # 把真正的判据遮住了。放宽 fd 复制之后，理由必须是真正的那个。
+    ok, note = hook.classify_bash(
+        "lark-cli api GET /open-apis/calendar/v4/calendars 2>&1")
+    check("带 2>&1 的 api 仍弹卡，且理由是真判据（不是「含 >」）",
+          (not ok) and "通用 API 逃生舱" in note, note)
+    # MSYS 前缀放行之后，api 的理由还是真正的那个（不是「环境变量前缀」）
+    ok, note = hook.classify_bash(
+        "MSYS_NO_PATHCONV=1 lark-cli api GET /open-apis/calendar/v4/calendars")
+    check("带 MSYS 前缀的 api 仍弹卡，理由是通用 API 逃生舱",
+          (not ok) and "通用 API 逃生舱" in note, note)
+
+    print("\n== 飞书 lark-cli：干跑预览 ==")
+    ok, note = hook.classify_bash(
+        "lark-cli im +messages-send --chat-id oc_x --text hi --dry-run")
+    check("带 --dry-run 的写命令照样弹卡，且卡面写明是预览",
+          (not ok) and "干跑预览" in note, note)
+
+
+def test_lark_table():
+    print("\n== 飞书官方风险表 ==")
+    check("表文件存在", os.path.exists(LARK_EFFECTS))
+    with open(LARK_EFFECTS, encoding="utf-8") as f:
+        data = json.load(f)
+    cmds = data.get("commands") or {}
+    check("表里命令数 > 700", len(cmds) > 700, f"{len(cmds)} 条")
+    risks = {v.get("risk") for v in cmds.values()}
+    check("三档风险都在", risks == {"read", "write", "high-risk-write"}, str(risks))
+    check("`calendar +agenda` 是 read",
+          cmds.get("calendar +agenda", {}).get("risk") == "read")
+    check("`im +messages-send` 是 write",
+          cmds.get("im +messages-send", {}).get("risk") == "write")
+    check("`im messages delete` 是 high-risk-write",
+          cmds.get("im messages delete", {}).get("risk") == "high-risk-write")
+    check("`api` 是 write",
+          cmds.get("api", {}).get("risk") == "write")
+    # schema 与 --help 两条来源对不上时，同步工具会喊；这里再确认没有"漏网的空 risk"
+    check("没有空 risk 的条目", all(v.get("risk") for v in cmds.values()))
+
+
+def test_exec_identity():
+    print("\n== 卡面「执行身份」（P1-4 补 --as bot）==")
+    spec = importlib.util.spec_from_file_location(
+        "exec_identity", os.path.join(ROOT, "app", "core", "exec_identity.py"))
+    ei = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ei)
+
+    def line(cmd):
+        return ei.describe({"tool_name": "Bash", "tool_input": {"command": cmd}})
+
+    check("dws ⇒ 钉钉 · 你的账号",
+          line("dws todo +get-my-tasks").startswith("钉钉 · 你的账号"),
+          line("dws todo +get-my-tasks"))
+    check("lark-cli 默认 ⇒ 飞书 · 你的账号",
+          line("lark-cli calendar +agenda").startswith("飞书 · 你的账号"),
+          line("lark-cli calendar +agenda"))
+    got = line("lark-cli im +messages-send --as bot --chat-id oc_x --text hi")
+    check("--as bot ⇒ 卡面写机器人身份", "机器人身份" in got, got)
+    got = line("lark-cli im +messages-send --as=bot --chat-id oc_x --text hi")
+    check("--as=bot 同样认", "机器人身份" in got, got)
+    got = line("lark-cli calendar +agenda --as user")
+    # ⚠️ 别用 `"机器人" not in got` —— 默认文案是「你的账号（不是机器人）」，
+    # 那样会把正确结果判成失败（我第一版就这么写的）。
+    check("--as user ⇒ 仍是你的账号",
+          "你的账号" in got and "机器人身份" not in got, got)
+    check("非 Bash 工具不显示这一行",
+          ei.describe({"tool_name": "Read", "tool_input": {}}) == "")
+    check("普通命令不显示这一行", line("ls -la") == "")
 
 
 def test_dryrun_hint():
@@ -340,6 +482,13 @@ def test_doc():
     check("钉钉页有「凭据存储」一节", "凭据存储" in doc)
     check("钉钉页写了 .env 与私钥", ".env" in doc and "私钥" in doc)
 
+    with open(DOC_LARK, encoding="utf-8") as f:
+        dl = f.read()
+    check("飞书页有「只读白名单」一节", "只读白名单" in dl)
+    check("飞书页写了三条命令层的分类来源", "schema" in dl and "Risk:" in dl)
+    check("飞书页写了凭据存储路径", ".lark-cli" in dl)
+    check("飞书页写了 --as bot 的卡面区别", "--as bot" in dl)
+
 
 def _env(adir):
     env = os.environ.copy()
@@ -404,6 +553,16 @@ def test_hook_e2e():
     check("写命令：桥没在跑 ⇒ 自己拒绝",
           "deny" in (out or ""), (out or "").strip()[:120])
 
+    # 弹卡也要记账 —— 否则事后没法复盘"这张卡为什么弹、用户点了什么"
+    clog = os.path.join(adir2, "carded.log")
+    ctext = ""
+    if os.path.exists(clog):
+        with open(clog, encoding="utf-8") as f:
+            ctext = f.read()
+    check("弹卡记账：[ask] 有请求", "[ask]" in ctext, ctext[:160])
+    check("弹卡记账：[deny] 有结果", "[deny]" in ctext, ctext[:160])
+    check("弹卡记账：带策略理由", "写操作" in ctext, ctext[:160])
+
     # ③ 非 Bash 工具照旧（Read 直放、Write 弹卡）
     adir3 = tempfile.mkdtemp(prefix="approval-read-")
     p = subprocess.run([sys.executable, HOOK],
@@ -416,9 +575,12 @@ def test_hook_e2e():
 def main():
     test_allow()
     test_ask()
+    test_lark()
     test_dryrun_hint()
     test_sensitive()
     test_table()
+    test_lark_table()
+    test_exec_identity()
     test_cred()
     test_secret_files()
     test_cred_e2e()
