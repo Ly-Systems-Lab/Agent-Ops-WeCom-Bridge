@@ -107,10 +107,24 @@
 > 把通用契约和运行器适配点分开列了：通用部分照抄，这 6 处按你的 Agent 自己回答。
 >
 > 📄 **已经有人照着接过了**：[外部接入记录](docs/field-reports/README.md) ——
-> OpenCode 与 Codex 两个 Agent 各按同一份文档从零接入，附它们自己的评价与踩坑。
+> OpenCode、Codex、DeepSeek Harness 三个 Agent 各按同一份文档从零接入，
+> 附它们自己的评价与踩坑（含原图）。
+>
+> 🖼️ **图片总览**：[docs/field-reports/assets/](docs/field-reports/assets/) ——
+> 各份接入记录的原始截图都在这个目录里，点进去就能看全。
 >
 > 目标很简单：**让更多人照着这套约定，更好、更便捷地人机协同学习、工作等**，
 > 而不是又多一个“更先进的工具”。
+
+<details>
+<summary>📊 换一个 harness 到底要改多少？（DSH 自己统计的表）</summary>
+
+![DSH 统计的改动量](docs/field-reports/assets/dsh-02-changes.jpg)
+
+> 「新增代码约 1000 行，改动既有代码 5 处。这个比例就是它帮助多大的直接证据 ——
+> **换掉一个『大脑』，身体一行没动。**」
+
+</details>
 
 ## 👥 一个群，几种成员
 
