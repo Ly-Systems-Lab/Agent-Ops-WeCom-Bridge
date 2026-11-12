@@ -2148,8 +2148,12 @@ def test_image_messages():
               bool(saved_path) and os.path.isfile(saved_path)
               and os.path.getsize(saved_path) == len(png))
         check("扩展名按字节判成 .png", saved_path.endswith(".png"), saved_path)
-        check("提示要求它用 Read 看、不许猜",
-              "Read" in prompt and "不要凭文件名" in prompt)
+        # 图像理解是**模型能力**：提示不能写死某一家 harness 的工具名，
+        # 且必须给"我这边看不到"一个诚实的出口（2026-11-12 DSH 实测回灌）。
+        check("提示不写死工具名，并给出「看不到」时的诚实出口",
+              "你自己的读图工具" in prompt and "看不到图片内容" in prompt
+              and "不要凭文件名" in prompt
+              and "请先用 Read 工具" not in prompt, prompt)
 
         p2, _ = b._image_prompt("https://h/x.png", "把图里的字打出来", "cid")
         check("用户附言进提示", "把图里的字打出来" in p2)
