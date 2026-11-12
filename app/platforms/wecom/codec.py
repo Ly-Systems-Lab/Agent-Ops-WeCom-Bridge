@@ -52,6 +52,59 @@ def find_msg_id(msg):
     return None, None
 
 
+_IMG_URL_KEYS = ("url", "pic_url", "picurl", "cdn_url", "download_url")
+
+
+def _find_image_url(body):
+    """从图片消息里取一个 http(s) 直链；取不到返回 ("", 实际出现的字段名)。
+
+    ⚠️ **字段名只能靠实测确定**：长连接回调的图片结构没有可访问的官方文档副本
+    （2026-11-12 取文档时被网络策略挡住）。这里按最可能的几个名字逐个试，
+    并把**实际出现了哪些键**一起带回去写进日志 —— 第一张真实图片就是答案。
+    `media_id` 那条路不走：取媒体要 access_token（应用身份），而桥手里只有机器人凭据。
+    """
+    img = body.get("image") if isinstance(body.get("image"), dict) else {}
+    keys = sorted(img.keys())
+    for k in _IMG_URL_KEYS:
+        v = img.get(k)
+        if isinstance(v, str) and v.lower().startswith(("http://", "https://")):
+            return v, keys
+    for k in _IMG_URL_KEYS:
+        v = body.get(k)
+        if isinstance(v, str) and v.lower().startswith(("http://", "https://")):
+            return v, keys or sorted(body.keys())
+    return "", keys or sorted(body.keys())
+
+
+def _find_aeskey(body):
+    """图片消息里带的解密密钥。**实测字段名是 `aeskey`（无下划线）**，见下。"""
+    img = body.get("image") if isinstance(body.get("image"), dict) else {}
+    for k in ("aeskey", "aes_key", "aesKey"):
+        v = img.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _log_body_shape(body, msgtype, image_url):
+    """非文本消息到达时把**形状**打出来（这种消息很少，逐条打）。
+
+    ⚠️ 只打键名 / 类型 / 长度，**不打值**：`response_url` 是带签名的临时令牌，
+    图片直链也一样 —— 日志会被复制、会被贴进 issue。
+    """
+    parts = []
+    for k, v in sorted(body.items()):
+        if isinstance(v, dict):
+            parts.append("%s{%s}" % (k, ",".join(sorted(map(str, v.keys())))))
+        elif isinstance(v, str):
+            parts.append("%s(len=%d)" % (k, len(v)))
+        else:
+            parts.append("%s=%r" % (k, v))
+    host = image_url.split("/")[2] if "//" in image_url else "?"
+    log.info("[shape] msgtype=%s 图片直链=%s body: %s", msgtype,
+             host if image_url else "（没找到）", " ".join(parts))
+
+
 class WeComCodecMixin:
     """收消息 / 收卡片事件：解析成规范化 dict，然后交给内核。
 
@@ -95,11 +148,19 @@ class WeComCodecMixin:
 
         text, at_prefix = strip_at(raw_text, self.bot_name)
         f, key = find_msg_id(msg)
+        msgtype = body.get("msgtype") or "text"
+        image_url, image_keys, image_aeskey = "", [], ""
+        if msgtype != "text":
+            image_url, image_keys = _find_image_url(body)
+            image_aeskey = _find_aeskey(body)
+            _log_body_shape(body, msgtype, image_url)
         self.core_handle_incoming({
             "userid": userid, "chatid": chatid, "chat_type": chat_type,
             "raw_chatid": raw_chatid, "chattype": chattype, "is_single": is_single,
             "response_url": response_url, "text": text, "at_prefix": at_prefix,
-            "msgtype": (body.get("msgtype") or "text"),
+            "msgtype": msgtype,
+            "image_url": image_url, "image_keys": image_keys,
+            "image_aeskey": image_aeskey,
             "dedupe_field": f, "dedupe_key": key or "",
             "reply_token": (msg.get("headers") or {}).get("req_id") or "",
         })

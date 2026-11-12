@@ -168,13 +168,14 @@
 ```bash
 python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt   # 只有 requests + websocket-client
+pip install -r requirements.txt   # requests + websocket-client + pycryptodome
 
 cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、ANTHROPIC_*
 .venv\Scripts\python.exe -X utf8 app\bridge.py
 ```
 
-- 依赖只有两个第三方包，其余全是标准库。**Windows 实测**；Linux 树莓派上同一套控制面闭环
+- 依赖只有三个第三方包（`pycryptodome` 只用来解**加密的图片**；不装它文本照常，图片会明确报错）。
+  其余全是标准库。**Windows 实测**；Linux 树莓派上同一套控制面闭环
   也已跑通（自启用的是系统服务，不是本仓脚本）；macOS 协议层同样通用，自启需自己换一套。
 - **默认是只读档**（`dontAsk`）：能问答、能读代码，**不会动你的机器**。
   要让 Agent 真干活，显式改 `CC_PERMISSION_MODE` —— 见「[权限](#权限三种形态一个开关)」。
@@ -193,7 +194,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 ## 🧰 它现在能做什么
 
 **群聊 + 私聊都通**；流式气泡、模板卡片、审批卡片都已**真机验收**；
-[`tools/test_phase1.py`](tools/test_phase1.py) 里 313 项检查（含会真调一次模型的那几项）全过 —— 你可以自己复跑。
+[`tools/test_phase1.py`](tools/test_phase1.py) 里 339 项检查（含会真调一次模型的那几项）全过 —— 你可以自己复跑。
 
 | 能力 | 说明 |
 |---|---|
@@ -205,6 +206,7 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 | **模型热切换** | 聊天里 `/model` 看列表、`/model <编号\|名字>` 切换、`/model reset` 回默认。**下一条消息生效，不用重启**；切换前先真调一次验证，通过才写进 `data/model.json`；**全局**（群聊 + 私聊一起变）。⚠️ **切到/切离「有自己的工作目录」的模型（例如本地模型）会自动新开会话**（主动设计，见下方第 4 条） |
 | 忙碌语义 | 处理中再发 → 回「忙碌中…本条已忽略」，**丢弃不排队**（防输入轰炸） |
 | 长回答 | 先整条发；只有被平台 `40058` 拒了才切片（每片等回执，失败会明说哪段没送到） |
+| **图片** | 发图片给它，它会**真的看图**（落盘 → 用 `Read` 打开 → 描述/按你说的处理）；图存在系统临时目录，下一轮说"刚才那张图"还在。⚠️ 企微的图是**加密**的（AES-256-CBC、**填充块 32 字节**），解密需要 `pycryptodome` |
 | 上下文余量 | 每条回复尾部 `📊 上下文 x% (m/n)`：分母取 `modelUsage.contextWindow`，分子取**本轮最后一次 assistant 调用的 usage**（不是累计值） |
 | **真进度** | 气泡显示「正在跑（12s · 第 3 步）+ 当前工具」；**变化才推**，附 60s 兜底心跳 |
 | **模板卡片** | `/status` = 刷新 / 清空 / 停止。⚠️ 按钮文字**只有 2 个字的余量**：4 个字会被截成「清...」 |

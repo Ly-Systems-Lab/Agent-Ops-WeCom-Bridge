@@ -2074,6 +2074,176 @@ def test_approval_policy_card():
           "策略" not in json.dumps(F()._approval_card(plain), ensure_ascii=False))
 
 
+def test_image_messages():
+    """图片消息：直链提取 / 字节嗅探 / 落盘 / 提示文本 / 拿不到直链要如实拒绝。
+
+    背景（2026-11-12 用户实测）：企微里发图片，桥原来一律回「目前只支持文本消息」。
+    但平台**本来就支持**（Pi 侧那套能识别图片）—— 这是我们把一条能走的路自己关掉了。
+    新的做法：把图下到本机，再让模型的 `Read` 去看（Claude Code 的 Read 本来就能看图）。
+    """
+    print("\n== 图片消息 ==")
+    import tempfile as _tf
+    import core.bridge_core as bc
+    import platforms.wecom.codec as wc
+
+    # ① 直链提取：回调结构只能靠实测，先按最可能的几个字段兜住
+    check("直链：image.url", wc._find_image_url(
+        {"image": {"url": "https://h/x.jpg"}})[0] == "https://h/x.jpg")
+    check("直链：image.pic_url", wc._find_image_url(
+        {"image": {"pic_url": "https://h/x.jpg"}})[0] == "https://h/x.jpg")
+    check("直链：平铺 pic_url", wc._find_image_url(
+        {"pic_url": "https://h/x.jpg"})[0] == "https://h/x.jpg")
+    url0, keys0 = wc._find_image_url({"image": {"media_id": "m1", "aes_key": "k"}})
+    check("没有直链 ⇒ 返回空 + 带回真实字段名",
+          url0 == "" and keys0 == ["aes_key", "media_id"], f"{url0!r} {keys0}")
+
+    # ② 按字节判类型（URL 后缀不可信：query 里常带 wx_fmt，也可能没有后缀）
+    check("JPEG 魔数", bc._image_ext(b"\xff\xd8\xff\xe0\x00\x10") == ".jpg")
+    check("PNG 魔数", bc._image_ext(b"\x89PNG\r\n\x1a\n\x00\x00") == ".png")
+    check("GIF 魔数", bc._image_ext(b"GIF89a....") == ".gif")
+    check("WebP 魔数", bc._image_ext(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == ".webp")
+    check("HTML 错误页不算图片", bc._image_ext(b"<html>403</html>") == "")
+
+    tmp = _tf.mkdtemp(prefix="ccbridge-img-")
+    store = bridge.Store(os.path.join(tmp, "i.db"))
+
+    class FakeRunner:
+        perm_mode = "bypassPermissions"
+        timeout = 600
+
+        def kill_current(self):
+            return True
+
+    b = bridge.Bridge(BOT_ID, "sec", "u1", "", "CC BOT", store, FakeRunner(),
+                      tmp, 18000, 20, 0)
+
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 512
+
+    class _Resp:
+        def __init__(self, data):
+            self.b = data
+
+        def read(self, n=-1):
+            if n is None or n < 0:
+                n = len(self.b)
+            out, self.b = self.b[:n], self.b[n:]
+            return out
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    real_open = bc.urllib.request.urlopen
+    saved_path = ""
+    try:
+        # ③ 下载 → 落盘 → 提示里带绝对路径
+        bc.urllib.request.urlopen = lambda req, timeout=0: _Resp(png)
+        prompt, why = b._image_prompt("https://h/x.png", "", "cid")
+        check("下载成功返回提示", bool(prompt) and why == "", why)
+        saved_path = prompt.split("已存到本机：")[1].split("（")[0] if prompt else ""
+        check("提示里带的是绝对路径", os.path.isabs(saved_path), saved_path)
+        check("文件真的落盘、字节一致",
+              bool(saved_path) and os.path.isfile(saved_path)
+              and os.path.getsize(saved_path) == len(png))
+        check("扩展名按字节判成 .png", saved_path.endswith(".png"), saved_path)
+        check("提示要求它用 Read 看、不许猜",
+              "Read" in prompt and "不要凭文件名" in prompt)
+
+        p2, _ = b._image_prompt("https://h/x.png", "把图里的字打出来", "cid")
+        check("用户附言进提示", "把图里的字打出来" in p2)
+
+        bc.urllib.request.urlopen = lambda req, timeout=0: _Resp(b"<html>403</html>")
+        p3, why3 = b._image_prompt("https://h/x.png", "", "cid")
+        check("返回 HTML ⇒ 判为不是图片（别把错误页存成 .jpg）",
+              p3 == "" and "不是图片" in why3, why3)
+
+        old_max = bc.IMAGE_MAX_BYTES
+        bc.IMAGE_MAX_BYTES = 100
+        bc.urllib.request.urlopen = lambda req, timeout=0: _Resp(png)
+        p4, why4 = b._image_prompt("https://h/x.png", "", "cid")
+        bc.IMAGE_MAX_BYTES = old_max
+        check("超过上限 ⇒ 拒绝", p4 == "" and "上限" in why4, why4)
+
+        # 企微的媒体是 AES-256-CBC 密文，靠回调里的 aeskey 解（实测字段名 aeskey）。
+        # 🚨 **填充块大小是 32，不是 16** —— 真机第一版按 16 解，图能读但尾巴上
+        #    留着 25 个 0x19、`FFD9` 不在末尾（2026-11-12 量出来的）。
+        try:
+            from base64 import b64encode
+            from Crypto.Cipher import AES
+            key = b"0123456789abcdef0123456789abcdef"
+            aeskey = b64encode(key).decode().rstrip("=")
+
+            def _roundtrip(nbytes, tag):
+                pad = nbytes - len(png) % nbytes
+                enc = AES.new(key, AES.MODE_CBC, key[:16]).encrypt(png + bytes([pad]) * pad)
+                bc.urllib.request.urlopen = lambda req, timeout=0: _Resp(enc)
+                p5, why5 = b._image_prompt("https://h/x.png", "", "cid", aeskey)
+                path5 = p5.split("已存到本机：")[1].split("（")[0] if p5 else ""
+                got = open(path5, "rb").read() if path5 and os.path.isfile(path5) else b""
+                if path5 and os.path.isfile(path5):
+                    os.remove(path5)
+                check(f"加密图（{tag}）解出来与原图逐字节相同",
+                      bool(p5) and got == png, f"{len(got)}B vs {len(png)}B {why5[:40]}")
+
+            _roundtrip(32, "企微口径：块大小 32")
+            _roundtrip(16, "常规口径：块大小 16")
+
+            # 没有 aeskey 时必须**如实失败**，不能把密文当图片存下来
+            p6, why6 = b._image_prompt("https://h/x.png", "", "cid")
+            check("密文 + 没有 aeskey ⇒ 如实报错",
+                  p6 == "" and "不是图片" in why6 and "前16字节" in why6, why6[:90])
+        except ImportError:
+            print("  ⏭ 没装 pycryptodome，跳过加密图用例")
+    finally:
+        bc.urllib.request.urlopen = real_open
+
+    # ⑤ 顺序：取图必须排在「空消息」早退之前
+    #    （2026-11-12 真机踩到：图片正文本来就是空的 ⇒ 先撞上早退，
+    #      回执是「（空消息，未执行）」，图根本没去下）
+    import inspect
+    src = inspect.getsource(bc.CoreMixin._do_job)
+    # 用代码锚点比对，别用那句中文文案 —— 它在上面的注释里也出现过一次
+    i_img, i_empty = src.find('job.get("image_url")'), src.find("if not text.strip():")
+    check("取图分支排在「空消息」早退之前", -1 < i_img < i_empty,
+          f"img@{i_img} empty@{i_empty}")
+
+    # ④ 内核分流：没直链 ⇒ 如实说明且不入队；其他非文本类型仍明确拒绝
+    captured = []
+    b.reply = lambda url, content: captured.append(content) or True
+    n0 = b._q.qsize()
+    b.core_handle_incoming({
+        "userid": "u1", "chatid": "cid", "chat_type": 2, "raw_chatid": "cid",
+        "text": "", "msgtype": "image", "image_url": "",
+        "image_keys": ["aes_key", "media_id"], "dedupe_key": "k1"})
+    check("图片没有直链 ⇒ 不入队", b._q.qsize() == n0)
+    check("图片没有直链 ⇒ 如实回报字段名",
+          "没有可下载的链接" in captured[-1] and "media_id" in captured[-1],
+          captured[-1][:44])
+    b.core_handle_incoming({
+        "userid": "u1", "chatid": "cid", "chat_type": 2, "raw_chatid": "cid",
+        "text": "", "msgtype": "voice", "dedupe_key": "k2"})
+    check("语音/文件仍然明确不支持", "目前支持文本和图片消息" in captured[-1], captured[-1])
+
+    # ⑤ codec 的接线：图片消息要把 msgtype 与直链一起交给内核
+    got = []
+    b.core_handle_incoming = lambda inc: got.append(inc)
+    b._handle_callback({"cmd": "aibot_msg_callback", "headers": {"req_id": "R"},
+                        "body": {"aibotid": BOT_ID, "chatid": "cid",
+                                 "chattype": "group", "from": {"userid": "u1"},
+                                 "msgid": "mimg", "msgtype": "image",
+                                 "response_url": "http://stub",
+                                 "image": {"url": "https://h/x.jpg"}}})
+    check("codec 把 msgtype=image 带进内核",
+          bool(got) and got[0].get("msgtype") == "image", str(got[:1]))
+    check("codec 把直链带进内核",
+          bool(got) and got[0].get("image_url") == "https://h/x.jpg")
+
+    if saved_path and os.path.isfile(saved_path):
+        os.remove(saved_path)          # 别在系统临时目录里留测试垃圾
+
+
 def main():
     skip_llm = "--skip-llm" in sys.argv
     test_chunk()
@@ -2099,6 +2269,7 @@ def main():
     test_cwd_and_approval()
     test_exec_identity()
     test_approval_policy_card()
+    test_image_messages()
     if skip_llm:
         print("\n（跳过 runner 真跑）")
     else:

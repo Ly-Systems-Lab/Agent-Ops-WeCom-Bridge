@@ -24,8 +24,13 @@
 
 | 方法 | 入参 |
 |---|---|
-| `core_handle_incoming(inc)` | `{userid, chatid, chat_type, raw_chatid, chattype, is_single, response_url, text, at_prefix, msgtype, dedupe_field, dedupe_key, reply_token}` |
+| `core_handle_incoming(inc)` | `{userid, chatid, chat_type, raw_chatid, chattype, is_single, response_url, text, at_prefix, msgtype, dedupe_field, dedupe_key, reply_token}`；图片消息另带 `image_url`（直链）、`image_aeskey`（解密用，可空）、`image_keys`（回调里实际出现的字段名，仅用于日志/排错） |
 | `core_handle_card_action(act)` | `{key, userid, chatid, chat_type, raw_chatid, task_id, reply_token}` |
+
+**图片的契约**（2026-11-12 真机实测）：平台层**只负责**从回调里取出一个 http(s) 直链和
+解密密钥，**不下载、不落盘**（下载放在内核的 worker 线程里做 —— 回调跑在 websocket
+读线程上，在那儿下载会连心跳和回执一起堵住）。内核把图落成本地文件，再把
+「请用 Read 打开这个路径」写进提示。⇒ 换平台时这里要换的只是"从哪个字段取直链"。
 
 ## 三条必须遵守的语义（不遵守就会静默坏掉）
 

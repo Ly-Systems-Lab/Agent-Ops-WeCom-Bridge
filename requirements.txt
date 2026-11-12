@@ -1,7 +1,11 @@
-# 桥只有两个第三方依赖，其余全部是标准库（argparse/json/logging/os/queue/re/sqlite3/
-# subprocess/sys/tempfile/threading/time/uuid/datetime）。
+# 桥只有三个第三方依赖，其余全部是标准库（argparse/json/logging/os/queue/re/sqlite3/
+# subprocess/sys/tempfile/threading/time/uuid/datetime/hashlib/urllib）。
 #
-# 实测版本（Windows 11 + Python 3.14.6，2026-10-28）：requests 2.34.2 / websocket-client 1.9.2
+# 实测版本（Windows 11 + Python 3.14.6）：requests 2.34.2 / websocket-client 1.9.2 /
+#     pycryptodome 4.3.0（2026-11-12）
 # 装法见 docs/claude-code-wecom-guide.md 的「开始之前」一节。
 requests>=2.28
 websocket-client>=1.6
+# 只用来解**加密的图片消息**（AES-256-CBC）。不装它文本照常，
+# 收到图片会明确回「没装 pycryptodome ⇒ 解不了」，不会静默失败。
+pycryptodome>=3.18

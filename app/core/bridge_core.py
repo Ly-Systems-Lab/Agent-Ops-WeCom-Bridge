@@ -4,11 +4,15 @@
 判据：用 `tools/check_layers.py` 复核，平台帧名 / 错误码 / WebSocket 出现 0 次。
 """
 
+import hashlib
 import json
 import os
 import queue
+import tempfile
 import threading
 import time
+import urllib.request
+from datetime import datetime
 
 from common import APPROVAL_POLL_SEC, PROGRESS_HEARTBEAT_SEC, knob, log
 from core.model_store import valid_model_name
@@ -94,6 +98,70 @@ class ProgressPump:
         self._dirty.set()        # 让 wait 立刻返回
         if self._t.is_alive():
             self._t.join(timeout=knob("SEND_WAIT_SEC") + 2)
+
+
+# 收下来的图片往哪放、能多大。放系统临时目录**而不是工作区**：
+# 工作区可能是 git 仓库，往里丢二进制文件会污染 `git status`；
+# 而模型读文件用的是绝对路径，放哪都一样。目录按天分，方便清。
+IMAGE_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _image_ext(head):
+    """按**前几字节**判图片类型，返回扩展名；不像图片就返回空串。
+
+    为什么不看 URL 后缀：直链的 query 里常带 `?wx_fmt=jpeg&…`，也有完全没有后缀的；
+    而把 HTML 错误页当图片存下来，模型只会得到一个"读不出"的文件 —— 白白多一轮。
+    """
+    if head[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return ".webp"
+    return ""
+
+
+def _aes_decrypt(data, aeskey):
+    """按企微的口径解媒体：AES-256-CBC + PKCS#7，key = base64(aeskey)，IV = key 前 16 字节。
+
+    🚨 **填充是按 32 字节一块的，不是 16**（2026-11-12 真机量出来的）：
+    第一版按 AES 的常规 16 字节去解，图能读（JPEG 解码器容忍尾部垃圾），
+    但文件尾巴上留着 **25 个 `0x19`**，`FFD9` 不在末尾 —— 换个工具就会出问题。
+    实测那 25 个字节正好等于填充值 ⇒ 这是**块大小 32 的 PKCS#7**
+    （企微「会话内容存档」那套的老约定）。去掉之后末尾是 `FFD9`，长度 137,927。
+
+    ⚠️ **解密是可选的**：没装 `pycryptodome` 就返回 None，由调用方**如实报错**。
+    不做"猜一个"的降级 —— 把密文当成图片交给模型，只会得到一句"读不出来"，
+    然后在错误的层次上排查（这是本项目反复踩过的坑：别让失败悄悄发生）。
+    """
+    try:
+        from base64 import b64decode
+        from Crypto.Cipher import AES
+    except ImportError:
+        log.warning("[img] 收到疑似加密的图片，但没装 pycryptodome ⇒ 解不了"
+                    "（pip install pycryptodome）")
+        return None
+    try:
+        key = b64decode(aeskey + "=" * (-len(aeskey) % 4))
+        if len(key) not in (16, 24, 32):
+            log.warning("[img] aeskey 解出来是 %d 字节，不是合法的 AES 密钥长度", len(key))
+            return None
+        out = AES.new(key, AES.MODE_CBC, key[:16]).decrypt(data)
+        pad = out[-1] if out else 0
+        # 上限写 32：企微用的是**块大小 32** 的 PKCS#7（实测见 docstring）。
+        # 也顺带兼容常规的 16 —— 两者的判据是同一条，不需要分支。
+        if 1 <= pad <= 32 and out[-pad:] == bytes([pad]) * pad:
+            out = out[:-pad]
+        else:
+            # 填充对不上**不静默通过**：要么 aeskey 不是这把，要么这是别的东西。
+            # 记一笔再交给后面的魔数判定（魔数通过说明能用，但值得知道）。
+            log.info("[img] 解密后填充不匹配（末字节=%d），照原样往下走", pad)
+        return out
+    except Exception as e:
+        log.warning("[img] aeskey 解密失败：%s: %s", type(e).__name__, e)
+        return None
 
 
 class CoreMixin:
@@ -913,6 +981,89 @@ class CoreMixin:
                 self._runners.pop(key, None)
 
 
+    def _image_prompt(self, url, caption, chatid, aeskey=""):
+        """下载一张图 → 落盘 → 返回一段**告诉模型去看那个文件**的提示。
+
+        为什么走「落盘 + Read」，而不是把图片字节塞进命令行：
+          · 桥的 Runner 只有一条输入通道（`-p <提示>`，正文走 stdin），
+            要换成图片内容块得重写整条输入链路；
+          · 而 Claude Code 的 `Read` **本来就能看图** —— 2026-11-12 用桥的原班命令行
+            （同一条 key、`--setting-sources project,local`）读一张自造的 PNG，
+            代号 / 三个形状的颜色 / 那行英文全对。
+        落盘还顺带买到两件事：用户下一轮说"刚才那张图"时文件还在；模型能对它跑别的工具。
+
+        返回 `(提示文本, "")` 成功、`("", 原因)` 失败 —— 失败要**如实回报**，
+        不能把空提示当成"用户没说话"。
+        """
+        if not url.lower().startswith(("http://", "https://")):
+            return "", "链接不是 http(s)"
+        host = url.split("/")[2] if "//" in url else "?"
+        t0 = time.time()
+        ctype = ""
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "wecom-cc-bridge"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                try:
+                    ctype = r.headers.get("Content-Type") or ""
+                except Exception:
+                    ctype = ""
+                buf, total = [], 0
+                while True:
+                    b = r.read(256 * 1024)
+                    if not b:
+                        break
+                    total += len(b)
+                    if total > IMAGE_MAX_BYTES:
+                        return "", f"图片超过上限（{IMAGE_MAX_BYTES} 字节）"
+                    buf.append(b)
+        except Exception as e:
+            # 只报类型和主机 —— 直链里有签名参数，整条贴出来等于把令牌写进日志。
+            return "", f"{type(e).__name__}（host={host}）：{e}"
+
+        data = b"".join(buf)
+        ext = _image_ext(data[:16])
+        if not ext and aeskey:
+            # 企微的媒体可能是密文（回调里带 `aeskey` 就是在提示这一点）。
+            plain = _aes_decrypt(data, aeskey)
+            if plain:
+                data = plain
+                ext = _image_ext(data[:16])
+                if ext:
+                    log.info("[img] 直链是密文 ⇒ 用 aeskey 解开了（%d → %d B）",
+                             total, len(data))
+        if not ext:
+            # 打前 16 字节的十六进制：足以分开"密文 / HTML 错误页 / 别的格式"，
+            # 又不会把图片内容或整条带签名的 URL 写进日志。
+            return "", ("下载回来的不是图片（host=%s，content-type=%r，%d B，"
+                        "前16字节=%s%s）"
+                        % (host, ctype, total, data[:16].hex(),
+                           "" if aeskey else "，回调里没带 aeskey"))
+        total = len(data)
+
+        day = datetime.now().strftime("%Y%m%d")
+        dest = os.path.join(tempfile.gettempdir(), "wecom-inbox", day)
+        try:
+            os.makedirs(dest, exist_ok=True)
+            # 同一个直链 → 同一个文件名（重发同一张图不会堆一堆副本）
+            fn = "%s-%s%s" % (datetime.now().strftime("%H%M%S"),
+                              hashlib.sha1(url.encode("utf-8")).hexdigest()[:8], ext)
+            path = os.path.join(dest, fn)
+            with open(path, "wb") as f:
+                f.write(data)
+        except OSError as e:
+            return "", f"落盘失败：{e}"
+
+        log.info("[img] 已落盘 %s（%d B，%d ms，host=%s）",
+                 path, total, (time.time() - t0) * 1000, host)
+        hint = (f"[用户在聊天里发来一张图片，已存到本机：{path}"
+                f"（{total / 1024:.0f} KB，{ext[1:].upper()}）。"
+                f"请先用 Read 工具打开它看清楚，再回应用户；"
+                f"如果用户除了图片没写别的，就说明你看到了什么、并问他想让你做什么。"
+                f"不要凭文件名或上下文猜图片内容。]")
+        if (caption or "").strip():
+            hint += f"\n\n用户附言：{caption.strip()}"
+        return hint, ""
+
     def _do_job(self, job):
         chatid, chat_type, userid, text = (job["chatid"], job["chat_type"],
                                            job["userid"], job["text"])
@@ -929,6 +1080,19 @@ class CoreMixin:
         if st is None:
             log.warning("[stream] 回调没带 req_id ⇒ 退回 response_url + 主动推送")
             self.plat_reply(job.get("response_url") or "", "收到，处理中…")
+
+        # 图片：**在 worker 线程里**下载并落盘，再把"去看这个文件"写成给模型的提示。
+        # ⚠️ 必须排在下面的「空消息」早退**之前** —— 图片消息的正文本来就是空的，
+        #    放后面就会原样掉进"（空消息，未执行）"（2026-11-12 真机踩到，
+        #    日志：`[shape] msgtype=image …` 紧跟着 `正文=''` ⇒ 27B 的空消息回执）。
+        if job.get("image_url"):
+            prompt, why = self._image_prompt(job["image_url"], text, chatid,
+                                             job.get("image_aeskey") or "")
+            if not prompt:
+                log.warning("[img] 取图失败：%s", why)
+                self._finish(st, chatid, chat_type, f"❌ 图片没能取下来：{why}")
+                return
+            text = prompt
 
         if not text.strip():
             self._finish(st, chatid, chat_type, "（空消息，未执行）")
@@ -1135,9 +1299,21 @@ class CoreMixin:
             log.warning("[msg] 重复消息 %s=%s，跳过", inc.get("dedupe_field"), key)
             return
 
-        if (inc.get("msgtype") or "text") != "text":
-            log.info("[msg] 非文本 msgtype=%s，暂不支持", inc.get("msgtype"))
-            self.plat_reply(response_url, "目前只支持文本消息。")
+        # —— 消息类型分流。图片**不再是"不支持"**：它被落成本地文件，再当成
+        #    "带附件的文字"交给模型（见 `_image_prompt`）。其余类型仍然如实拒绝。
+        msgtype = inc.get("msgtype") or "text"
+        image_url = inc.get("image_url") or ""
+        if msgtype == "image" and not image_url:
+            # 拿得到回调、拿不到直链：如实说明，并把字段名带回去（第一张图就是答案）。
+            log.warning("[img] 图片消息里没有可下载的直链，字段=%s", inc.get("image_keys"))
+            self.plat_reply(response_url,
+                            "收到图片，但回调里没有可下载的链接（字段：%s）。"
+                            "把这条日志发我，我按实际字段补上。"
+                            % ("、".join(inc.get("image_keys") or []) or "无"))
+            return
+        if msgtype not in ("text", "image"):
+            log.info("[msg] 非文本 msgtype=%s，暂不支持", msgtype)
+            self.plat_reply(response_url, "目前支持文本和图片消息。")
             return
 
         text = inc.get("text") or ""
@@ -1205,6 +1381,10 @@ class CoreMixin:
         # （平台回复帧头里的 req_id）；自己编一个平台不认。
         job = {"chatid": chatid, "chat_type": chat_type, "userid": userid,
                "text": text, "msgid": key or "",
+               # 图片的下载放到**worker 线程**里做（`_do_job`）——回调是在
+               # websocket 读线程上执行的，在那儿下载会连心跳和回执一起堵住。
+               "image_url": image_url,
+               "image_aeskey": inc.get("image_aeskey") or "",
                "req_id": inc.get("reply_token") or "",
                "response_url": response_url,
                # 入队那一刻的会话代次；跑完落库前要再比一次（见 `_epoch`）
