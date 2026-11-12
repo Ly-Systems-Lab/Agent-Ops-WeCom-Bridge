@@ -13,8 +13,9 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from common import (ENV, LOGDIR, LOG_KEEP_DAYS, MUTEX_NAME, ROOT, TASK_NAME,
-                    cfg, cfg_bool, cfg_int, knob, log)
+from common import (ENV, LOGDIR, LOG_KEEP_DAYS, ROOT,
+                    bridge_instance, bridge_instance_problem, cfg, cfg_bool,
+                    cfg_int, knob, log, mutex_name, task_name)
 
 
 def prune_old_logs(days=LOG_KEEP_DAYS):
@@ -165,15 +166,18 @@ def setup_logging(verbose=False):
 _MUTEX_HANDLE = None
 
 
-def acquire_single_instance(name=MUTEX_NAME):
+def acquire_single_instance(name=None):
     """单实例保护：Windows 命名互斥量，进程退出由系统自动释放（不会留脏锁）。
 
     为什么必须有：自启 + 手动启动（或 `--send-test` 测试）同时跑 ⇒
     两条长连接、同一条消息回两遍、两个 claude 抢同一个 sqlite 和同一个仓库。
+
+    `name` 留空 = 用 `mutex_name()` 派生的名字（基名 + 平台 + `BRIDGE_INSTANCE`）。
     """
     global _MUTEX_HANDLE
     if os.name != "nt":
         return True
+    name = name or mutex_name()
     try:
         import ctypes
         from ctypes import wintypes
@@ -243,10 +247,16 @@ def _autostart_xml():
     script = os.path.join(ROOT, "app", "bridge.py")
     user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}".strip("\\")
     today = datetime.now().strftime("%Y-%m-%dT00:00:00")
+    # 说明里带实例名：同机两套桥的任务在「任务计划程序」里长得一模一样，
+    # 光看名字分不清谁是谁（而这两个任务恰恰是最容易互相覆盖的东西）。
+    inst = bridge_instance()
+    desc = "wecom-cc-bridge: WeCom bot bridge to local Claude Code"
+    if inst:
+        desc = f"{desc} [instance: {inst}]"
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>wecom-cc-bridge: WeCom bot bridge to local Claude Code</Description>
+    <Description>{_xml_escape(desc)}</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -316,20 +326,28 @@ def _schtasks(*args):
 
 
 def install_autostart():
-    tmp = os.path.join(tempfile.gettempdir(), "wecom-cc-bridge-task.xml")
+    """装开机自启。⚠️ `schtasks /Create … /F` **会静默覆盖同名任务** —— 见 `task_name()`。"""
+    problem = bridge_instance_problem()
+    if problem:
+        log.error("[autostart] %s —— 不装（装上去也分不清是哪一套桥）", problem)
+        return False, problem
+    tn = task_name()
+    tmp = os.path.join(tempfile.gettempdir(), f"{tn}-task.xml")   # 按任务名分开，别撞
     with open(tmp, "w", encoding="utf-16") as f:   # schtasks /XML 要 UTF-16
         f.write(_autostart_xml())
-    rc, out, err = _schtasks("/Create", "/TN", TASK_NAME, "/XML", tmp, "/F")
-    log.info("[autostart] 安装 rc=%s %s %s", rc, out.replace("\n", " "), err)
+    rc, out, err = _schtasks("/Create", "/TN", tn, "/XML", tmp, "/F")
+    log.info("[autostart] 安装 %r rc=%s %s %s", tn, rc, out.replace("\n", " "), err)
     return rc == 0, (out or err)
 
 
 def uninstall_autostart():
-    rc, out, err = _schtasks("/Delete", "/TN", TASK_NAME, "/F")
-    log.info("[autostart] 卸载 rc=%s %s %s", rc, out.replace("\n", " "), err)
+    tn = task_name()
+    rc, out, err = _schtasks("/Delete", "/TN", tn, "/F")
+    log.info("[autostart] 卸载 %r rc=%s %s %s", tn, rc, out.replace("\n", " "), err)
     return rc == 0, (out or err)
 
 
 def autostart_status():
-    rc, out, err = _schtasks("/Query", "/TN", TASK_NAME, "/FO", "LIST")
+    tn = task_name()
+    rc, out, err = _schtasks("/Query", "/TN", tn, "/FO", "LIST")
     return rc, (out or err)

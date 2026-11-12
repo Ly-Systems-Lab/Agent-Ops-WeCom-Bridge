@@ -1199,6 +1199,60 @@ def test_phase4():
     check("单实例：第一次拿到", first is True)
     check("单实例：第二次被拒", second is False)
 
+    # --- 同机多套桥：BRIDGE_INSTANCE 只改「互斥量 + 计划任务名」的末尾（P1-1，2026-11-12）
+    print("\n== 同机多套桥：BRIDGE_INSTANCE ==")
+    inst_backup = os.environ.pop("BRIDGE_INSTANCE", None)
+    env_backup = bridge.ENV.pop("BRIDGE_INSTANCE", None)
+    try:
+        check("默认：互斥量与上游逐字一致",
+              bridge.mutex_name("wecom") == "Local\\wecom-cc-bridge",
+              bridge.mutex_name("wecom"))
+        check("默认：任务名与上游一致", bridge.task_name() == "wecom-cc-bridge",
+              bridge.task_name())
+        check("默认：平台后缀照旧保留",
+              bridge.mutex_name("feishu") == "Local\\wecom-cc-bridge-feishu",
+              bridge.mutex_name("feishu"))
+        check("默认：合法（空串不算错）", bridge.bridge_instance_problem() == "")
+
+        os.environ["BRIDGE_INSTANCE"] = "dsh"
+        check("实例：互斥量带实例后缀",
+              bridge.mutex_name("wecom") == "Local\\wecom-cc-bridge-dsh",
+              bridge.mutex_name("wecom"))
+        check("实例：平台 + 实例同时在",
+              bridge.mutex_name("feishu") == "Local\\wecom-cc-bridge-feishu-dsh",
+              bridge.mutex_name("feishu"))
+        check("实例：任务名带实例后缀", bridge.task_name() == "wecom-cc-bridge-dsh",
+              bridge.task_name())
+        yz = bridge._autostart_xml()
+        check("自启 XML 的说明里带实例（任务计划里能分清两张任务）",
+              "instance: dsh" in yz)
+        os.environ["BRIDGE_INSTANCE"] = "codex"
+        check("两个实例的互斥量不同（否则第二套起不来）",
+              bridge.mutex_name("wecom") != "Local\\wecom-cc-bridge-dsh",
+              bridge.mutex_name("wecom"))
+
+        # 环境变量优先于 .env，但**两者都必须被认**
+        os.environ.pop("BRIDGE_INSTANCE", None)
+        bridge.ENV["BRIDGE_INSTANCE"] = "fromenv"
+        check(".env 里的值也生效", bridge.task_name() == "wecom-cc-bridge-fromenv",
+              bridge.task_name())
+        os.environ["BRIDGE_INSTANCE"] = "dsh"
+        check("环境变量覆盖 .env", bridge.task_name() == "wecom-cc-bridge-dsh",
+              bridge.task_name())
+
+        for bad in ("my dsh", "a\\b", "带中文"):
+            os.environ["BRIDGE_INSTANCE"] = bad
+            check(f"非法实例 {bad!r} 被拒（互斥量会静默失效）",
+                  bool(bridge.bridge_instance_problem()),
+                  bridge.bridge_instance_problem()[:40])
+    finally:
+        os.environ.pop("BRIDGE_INSTANCE", None)
+        bridge.ENV.pop("BRIDGE_INSTANCE", None)
+        if inst_backup is not None:
+            os.environ["BRIDGE_INSTANCE"] = inst_backup
+        if env_backup is not None:
+            bridge.ENV["BRIDGE_INSTANCE"] = env_backup
+
     # --- 电源：线程活着才有效（状态挂在那个线程上）
     t = bridge.start_keep_awake()
     check("电源线程在跑", t is not None and t.is_alive())

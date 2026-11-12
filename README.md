@@ -186,10 +186,14 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 .venv\Scripts\python.exe -X utf8 app\bridge.py --uninstall-autostart  # 卸
 ```
 
+**一台机器跑多套桥**（换一个 Agent 就行）：各自在 `.env` 里设 `BRIDGE_INSTANCE`（如 `dsh`）。
+它**只**改两个系统级名字的后缀 —— 单实例互斥量和计划任务名；留空就等于上游行为。
+不设的后果是静默的：第二套**起不来**，而装自启会把第一套的任务**覆盖**掉。
+
 ## 🧰 它现在能做什么
 
 **群聊 + 私聊都通**；流式气泡、模板卡片、审批卡片都已**真机验收**；
-[`tools/test_phase1.py`](tools/test_phase1.py) 里 218 项检查（含会真调一次模型的那几项）全过 —— 你可以自己复跑。
+[`tools/test_phase1.py`](tools/test_phase1.py) 里 313 项检查（含会真调一次模型的那几项）全过 —— 你可以自己复跑。
 
 | 能力 | 说明 |
 |---|---|

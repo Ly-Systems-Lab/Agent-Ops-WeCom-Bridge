@@ -63,6 +63,11 @@ DEFAULT_PERM_MODE = "dontAsk"
 LOG_KEEP_DAYS = 14        # 按天日志保留天数（启动时清理）
 WATCHDOG_SEC = 20         # 看门狗巡检间隔
 STALE_RX_SEC = 90         # 订阅后多久没有任何帧就判定连接已死（心跳 30s，给 3 个周期）
+# ⚠️ 这两个是**基名**，不是最终名字：它们**都不在项目目录里**，是整台机器共用的
+# 两个系统级对象。同机跑多套桥（Claude Code / Codex / OpenCode / DSH）时，
+# 第二套要么起不来（互斥量被占），要么把第一套的开机自启**静默覆盖**掉
+# （`schtasks /Create … /F`）。⇒ 真正的名字一律经 `mutex_name()` / `task_name()`
+# 派生，由 `.env` 的 `BRIDGE_INSTANCE` 追加后缀；留空 = 与上游完全一致。
 MUTEX_NAME = "Local\\wecom-cc-bridge"   # 单实例命名互斥量（Local\ = 当前会话）
 TASK_NAME = "wecom-cc-bridge"           # 任务计划程序里的名字
 
@@ -149,6 +154,56 @@ def parse_labels(s):
         if k and v:
             out[k] = v
     return out
+
+# 实例标识允许的字符。**排掉 `\` 是关键**：命名互斥量里它被当成命名空间分隔符
+# （只允许 `Local\` 那一层），再出现一个就让 `CreateMutexW` 失败 —— 而本工程的
+# 兜底是**放行**（宁可多开一个也别起不来）⇒ 单实例保护静默失效 ⇒ 双份回复。
+_INSTANCE_CHARS = frozenset(
+    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-")
+
+
+def bridge_instance():
+    """同机多套桥的实例标识（`BRIDGE_INSTANCE`，如 `dsh` / `codex`）。留空 = 上游行为。"""
+    return (cfg("BRIDGE_INSTANCE", "") or "").strip()
+
+
+def bridge_instance_problem():
+    """`BRIDGE_INSTANCE` 不合法时返回一句人话；合法或未设返回空串。
+
+    ⚠️ **唯一真源必须是 `cfg()`（先环境变量、再 `.env`），而且互斥量与任务名
+    必须由同一个值派生。** 曾经有一版任务名只读 `ENV`（`.env`）而互斥量读 `cfg()`：
+    用环境变量设了实例时两者不一致 ⇒ 互斥量说"我独占"，任务名却照样去覆盖别人的自启。
+    """
+    inst = bridge_instance()
+    bad = sorted({c for c in inst if c not in _INSTANCE_CHARS})
+    if not bad:
+        return ""
+    return (f"BRIDGE_INSTANCE={inst!r} 含不支持的字符 {''.join(bad)!r}；"
+            "只允许字母 / 数字 / `.` `_` `-`（它会拼进互斥量和计划任务名）")
+
+
+def mutex_name(platform="wecom"):
+    """单实例互斥量的最终名字：`基名[-平台][-实例]`。
+
+    平台后缀是原有的（2026-11-05：两个平台是不同的机器人、不同的长连接，
+    同时跑不冲突）；实例后缀是 2026-11-12 补的 —— **同一个平台也允许跑多套**，
+    只要各自用不同的机器人（同一个机器人的多条长连接是分摊事件，不是广播）。
+    """
+    name = MUTEX_NAME if platform == "wecom" else f"{MUTEX_NAME}-{platform}"
+    inst = bridge_instance()
+    return f"{name}-{inst}" if inst else name
+
+
+def task_name():
+    """任务计划程序里的名字：`基名[-实例]`。
+
+    ⚠️ **故意不加平台后缀**：已有部署的飞书 / Slack 自启任务都叫 `wecom-cc-bridge`，
+    改名会让预置的 `uninstall` 删不到旧任务、而旧任务还在跑。要同机并存，
+    显式设 `BRIDGE_INSTANCE` 即可。
+    """
+    inst = bridge_instance()
+    return f"{TASK_NAME}-{inst}" if inst else TASK_NAME
+
 
 def default_approval_dir(platform):
     """每个平台一个审批决策目录。

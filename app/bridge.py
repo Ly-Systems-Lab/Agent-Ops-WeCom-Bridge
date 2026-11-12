@@ -58,8 +58,9 @@ from common import (  # noqa: F401  （常量与配置）
     LOGDIR, LOG_KEEP_DAYS, MUTEX_NAME, PROGRESS_HEARTBEAT_SEC,
     PROGRESS_RAW_CAP, ROOT, SEEN_KEEP_DAYS, SEND_WAIT_SEC, STALE_RX_SEC,
     STREAM_LATCH_SEC, STREAM_LIMIT, STREAM_MAX_SEC, TASK_NAME, WATCHDOG_SEC,
-    WS_URL, cfg, cfg_bool, cfg_int, default_approval_dir, load_env, log,
-    parse_labels, parse_list, whitelist_gate,
+    WS_URL, bridge_instance, bridge_instance_problem, cfg, cfg_bool, cfg_int,
+    default_approval_dir, load_env, log, mutex_name, parse_labels, parse_list,
+    task_name, whitelist_gate,
 )
 from host import (  # noqa: F401  （宿主基建）
     DailyFileHandler, _autostart_xml, _schtasks, _xml_escape,
@@ -533,7 +534,14 @@ def main():
             slack_bot_user_id = _r.get("user_id") or ""
             log.info("[main] Slack workspace=%s（%s）bot=%s",
                      _r.get("team"), _r.get("team_id"), slack_bot_user_id)
-    log.info("[main] 平台 = %s", platform)
+    # 同机多套桥的实例标识。**校验必须在取互斥量之前**：这个名字会拼进
+    # 互斥量与计划任务名两个系统级对象，含 `\` 时互斥量静默失效 ⇒ 双份回复。
+    inst = bridge_instance()
+    inst_problem = bridge_instance_problem()
+    if inst_problem:
+        log.error("[main] %s —— 拒绝启动（改正 .env 后重试）", inst_problem)
+        return 2
+    log.info("[main] 平台 = %s%s", platform, f" · 实例 = {inst}" if inst else "")
 
     # 除认证外，还要把 `wecom-cli` 的凭据目录透传给子进程:
     # 不透传的话，模型跑 `wecom-cli` 会落到默认目录
@@ -600,7 +608,10 @@ def main():
     # ⚠️ 互斥量**按平台分开**：两个平台是不同的机器人、不同的长连接，
     #    同时跑不冲突；而同**一个**平台起两份就会分摊事件（飞书 3c 实测，
     #    企微则是服务端踢旧连接）—— 那才是这条锁真正要挡的。
-    mutex = MUTEX_NAME if platform == "wecom" else f"{MUTEX_NAME}-{platform}"
+    # ⚠️ **追加（2026-11-12）**：真正会互相抢事件的是「同一个机器人」，不是「同一个平台」。
+    #    同机跑多套桥（各用各的机器人、各自的长连接）本来不冲突，所以实例标识
+    #    由 `.env` 的 `BRIDGE_INSTANCE` 指定（如 dsh / codex）；留空 = 与上游完全一致。
+    mutex = mutex_name(platform)
     if not acquire_single_instance(mutex):
         # 返回 0：这是**正常**结果，不是失败 —— 任务计划程序每 3 分钟来敲一次门，
         # 活着的时候它就该安静地什么都不做（返回非 0 会被记成失败）。
