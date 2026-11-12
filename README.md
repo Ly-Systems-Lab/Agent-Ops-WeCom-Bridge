@@ -108,7 +108,12 @@
 >
 > 📄 **已经有人照着接过了**：[外部接入记录](docs/field-reports/README.md) ——
 > OpenCode、Codex、DeepSeek Harness 三个 Agent 各按同一份文档从零接入，
-> 附它们自己的评价与踩坑（含原图）。
+> 附它们自己的评价与踩坑（含原图）；其中 DSH 接入之后**又把新版收回去了一次**，
+> 自己那半边一处没丢（见该页「回灌」一节）。
+>
+> 🧬 **为什么这个仓可以被「取长补短」**：[锚点与增量](docs/anchor-and-delta.md) 讲分发模型
+> （为什么要留那条缝、它已经有哪些证据、我们对下游的义务）；
+> 具体怎么吸收一次新版：[升级与取长补短](docs/UPGRADING.md)。
 >
 > 🖼️ **图片总览**：[docs/field-reports/assets/](docs/field-reports/assets/) ——
 > 各份接入记录的原始截图都在这个目录里，点进去就能看全。
@@ -393,6 +398,8 @@ Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机
 | 让**另一个 AI Agent** 照着实现 | [`docs/`](docs/claude-code-wecom-guide.md) §8（自包含契约，可整段丢给它） |
 | **换一个聊天平台**（飞书 / 钉钉 / Slack） | [`platforms/`](platforms/README.md)：同一套约定，四个平台各答一遍 |
 | **把官方 CLI 接进来当执行面**（钉钉 `dws` / 飞书 `lark-cli`） | [`interop/`](interop/README.md)：四个平台的差异 + 接入六步 + 验收判据 |
+| **在它上面改出自己的版本，之后怎么跟进上游** | [`docs/UPGRADING.md`](docs/UPGRADING.md)：哈希树对比 → 只看删除行 → 整份替换 vs 定点合并 → 验证 → 回归 |
+| **这套「锚点 + 增量」的分发模型本身**（为什么、证据、我们对下游的义务） | [`docs/anchor-and-delta.md`](docs/anchor-and-delta.md) |
 | **验收清单** / 发布前红线 | [`docs/`](docs/claude-code-wecom-guide.md) §9 / §10 |
 | 代码在哪 | 见下表「目录」 |
 
@@ -406,7 +413,7 @@ Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机
 | [`tools/env_from_settings.py`](tools/env_from_settings.py) | 把 `~/.claude/settings.json` 里 `ANTHROPIC*` 搬到 `.env`（只打键名和长度，不回显 token） |
 | [`tools/test_phase1.py`](tools/test_phase1.py) | 单元测试（`--skip-llm` 只跑离线部分） |
 | [`.claude/settings.json`](.claude/settings.json) | 注册 `approval_hook.py`；`CC_APPROVAL=0` 时它是空壳 |
-| [`docs/`](docs/claude-code-wecom-guide.md) | 接入教程（人 + AI Agent 双读者） |
+| [`docs/`](docs/claude-code-wecom-guide.md) | 接入教程（人 + AI Agent 双读者）；[锚点与增量](docs/anchor-and-delta.md) / [升级](docs/UPGRADING.md) / [联邦式中枢](docs/federation.md) |
 | [`platforms/`](platforms/README.md) | 平台适配：契约 + 企业微信 / 飞书 / 钉钉 / Slack 各自的答案 |
 | [`interop/`](interop/README.md) | 生态互联：官方 CLI 怎么当执行面接进来，四个平台差在哪 |
 | [`LICENSE`](LICENSE) [`NOTICE`](NOTICE) | Apache-2.0 全文与版权声明（都在仓库根目录） |
