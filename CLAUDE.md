@@ -110,6 +110,13 @@ Windows 路径 ⇒ 写成 `MSYS_NO_PATHCONV=1 lark-cli api GET /open-apis/...`�
 **`--dry-run` 照样弹卡** —— 卡面只提示可以干跑，不替你执行。
 `lark-cli update` 之后跑一次 `tools/lark_effect_sync.py --check`。
 
+⚠️ **官方标 `read` ≠ 不写你的磁盘**（2026-11-13）。下载、导出、"把事件写成文件"
+这类命令官方整条标成 `read`，但它们会往当前目录落文件 —— 闸门单列了一张
+`_READ_WRITES_LOCAL`（`lark-cli` 29 条 / `dws` 30 条），命中就弹卡。
+两档：自带默认路径的（`drive +export` 默认 `.`）**无条件弹**；不传参数就只打
+stdout 的（`markdown +fetch`）**带了写盘参数才弹**，短名 `-o` 也查。
+升级后跑 `python -X utf8 tools/probe_local_writes.py` 对账。
+
 ⛔ **凭据存储不弹卡，直接拒绝**：`~/.dws/`、`~/.lark-cli/`、`~/.dsh/`、
 `~/.config/wecom/`、`~/.claude/`、`~/.claude.json`、`~/.ssh/`、`data/wecom-cli-cc/`，
 以及**任意目录下的

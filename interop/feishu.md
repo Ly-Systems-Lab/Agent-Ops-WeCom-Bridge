@@ -97,6 +97,32 @@ lark-cli im +messages-send --as bot --chat-id "oc_xxx" --text "Hello"
   前面加 `MSYS_NO_PATHCONV=1`。闸门已放行这个前缀（只控制路径改写，换不掉被执行的程序），
   卡面理由仍然是真正的「通用 API 逃生舱」。
 
+### 6.1 官方标 `read`、但会往**本地**写文件的命令（2026-11-13）
+
+官方风险等级描述的是**对平台数据的副作用**，不描述**对本机磁盘的副作用**。
+所以有这一类命令：官方整条标 `read`，闸门直放，但它能往当前目录写文件。
+
+| CLI | 条数 | 例子 |
+|---|---|---|
+| `lark-cli` | **29** | `event consume --output-dir`、`drive +export`、`markdown +fetch --output` |
+| `dws` | **30** | `doc +media-download`、`drive download`、`sheet export-csv --output` |
+
+**两档，差在"不传参数会不会也落盘"**：
+
+- **A 档 · 无条件弹卡**：命令自带默认落盘路径。`drive +export` 默认 `.`、
+  `minutes +download` 默认 `minutes-downloads/`、`base +record-list` 不传 `--output`
+  也会「自动生成文件名」。
+- **B 档 · 带写盘参数才弹卡**：不传就真的只打 stdout。`markdown +fetch`、
+  `event consume`、`sheet export-csv` 都是这一档 —— 这种不能一律拦，
+  否则会把刚压下去的卡片数又抬回去。
+
+判定看**命令的能力**，不押在"这次刚好没传"上；短名也查
+（`dws drive +download` 的 `--output` 有必填的 `-o`，只查长名会让 `-o out.pdf` 溜过去）。
+
+对账工具：`python -X utf8 tools/probe_local_writes.py` —— 重扫两边
+`read` 命令的 `--help`，跟 `tools/approval_hook.py` 的 `_READ_WRITES_LOCAL` 比对，
+**新增/消失/档位存疑**三类差集都会列出来。CLI 升级后跑一次。
+
 ## 7. 已知差异与风险
 
 - 🔴 **官方明确建议：把接了 CLI 的机器人当私人助手用，不要拉群、不要允许其他用户与它交互。**

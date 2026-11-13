@@ -112,6 +112,24 @@ python -X utf8 tools/dws_effect_sync.py           # 确认无误再重新落盘
 清单在 `tools/approval_hook.py` 的 `_SENSITIVE_READ`，改一行即可。
 **这不是黑名单** —— 点「允许」照常执行，我们只负责把风险摆到卡面上。
 
+### 2.2b 另一类否决：官方标 `read`，但会往**本地**写文件（2026-11-13）
+
+官方的 `effect=read` 描述的是**对平台数据**没有副作用，不描述**对本机磁盘**。
+这两件事不是一回事 —— `doc +media-download` 官方标 `read`，却会把附件写到当前目录。
+
+`dws` 侧一共 **30 条**，两档（完整清单在 `tools/approval_hook.py` 的 `_READ_WRITES_LOCAL`）：
+
+- **A 档 · 无条件弹卡**：自带默认落盘路径。`doc +media-download`（默认 `.`）、
+  `drive download`（默认当前目录）、`mail attachment download`（默认 `.`）、
+  `minutes +download`（批量默认 `minutes-downloads/`）。
+- **B 档 · 带写盘参数才弹卡**：不传就只打 stdout。`html fetch`、`markdown fetch`
+  （「不传则仅输出内容」）、`sheet export-csv`。
+
+短名一起查：`drive +download` 的 `--output` 有必填的 `-o`，只查长名会让 `-o out.pdf` 溜过去。
+
+对账：`python -X utf8 tools/probe_local_writes.py --cli dws`（约 25 分钟，
+顺带把 `lark-cli` 一侧也扫一遍就省掉 `--cli`）。
+
 ### 2.3 卡面上的「策略」一行
 
 弹卡时会写清为什么被拦，四种口径：
@@ -122,6 +140,7 @@ python -X utf8 tools/dws_effect_sync.py           # 确认无误再重新落盘
 | `表外按写（api /v1.0/…）` | 官方表里没有这条命令，按写处理 |
 | `会读出密钥：客户端凭证（…）` | 见 2.2 |
 | 「含 `$(`（命令替换/重定向）⇒ 按写处理」 | 命中本地护栏 |
+| `官方标 read，但会往本地写文件：…` | 见 2.2b（默认落盘 / 带写盘参数） |
 
 卡面说"支持 `--dry-run` 预演"时，可以让 Agent 先带着它跑一遍（那一条本身也不改数据），
 看过预演结果再决定要不要发 —— 闸门**不会**替你自动跑：在用户点头之前先执行一次命令，

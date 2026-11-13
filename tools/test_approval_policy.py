@@ -587,6 +587,61 @@ def test_hook_e2e():
     check("Read 仍然直放", p.returncode == 0 and not p.stdout.strip())
 
 
+def test_local_writes():
+    """2026-11-13：官方标 read、但会往**本地**写文件的命令。
+
+    官方风险等级只描述对**平台数据**的副作用，不描述对**本机磁盘**的副作用 ——
+    `lark-cli event consume --output-dir` 就是典型：整条标 read，却能写文件。
+    这里同时验两件相反的事：
+      · 带写盘参数的照拦（否则就是"不经审批写磁盘"）；
+      · **不带的照放** —— `markdown +fetch` 不传 `--output` 时真的只回内容，
+        一律弹卡会把刚压下去的卡片数又抬回去。
+    """
+    print("\n== 本地写盘：read 命令的落盘参数 ==")
+
+    allow = [
+        ("lark-cli event consume im.message.receive_v1", "不传 --output-dir 就只是 stdout"),
+        ("lark-cli markdown +fetch --file-token f_x", "不传 --output 就只回内容"),
+        ("lark-cli sheets +cells-get --spreadsheet s_x", "不传 --output-path 就不落盘"),
+        ("lark-cli im +chat-search --query x", "本来就不写盘"),
+        ("lark-cli docs +fetch --doc-token d_x", "假阳性复核：--doc-format 不是写盘参数"),
+        ("dws markdown fetch --node n_x", "dws 侧：不传 --output 就只回内容"),
+    ]
+    for cmd, why in allow:
+        ok, note = hook.classify_bash(cmd)
+        check(f"直放 · {why}", ok, "" if ok else f"被拦：{note}")
+
+    ask = [
+        ("lark-cli event consume im.message.receive_v1 --output-dir out", "把事件写成文件"),
+        ("lark-cli event consume im.message.receive_v1 --output-dir=out", "等号写法同样拦"),
+        ("lark-cli drive +export --doc-token d_x", "不传 --output-dir 也落当前目录"),
+        ("lark-cli base +record-list --app-token a_x", "不传 --output 也自动生成 ndjson"),
+        ("lark-cli minutes +download --minute-token m_x", "默认写到 ./minutes/<token>/"),
+        ("lark-cli markdown +fetch --file-token f_x --output a.md", "显式给了落盘路径"),
+        ("lark-cli sheets +cells-get --spreadsheet s_x --output-path out.json", "写盘参数"),
+        ("dws doc +media-download --node n_x", "dws 侧：不传 --output 也落到当前目录"),
+        ("dws drive +download --node n_x -o out.pdf", "dws 短名 --output 是必填的 -o"),
+        ("dws markdown fetch --node n_x --output a.md", "dws 侧：显式给了落盘路径"),
+    ]
+    for cmd, why in ask:
+        ok, note = hook.classify_bash(cmd)
+        check(f"弹卡 · {why}", (not ok) and "往本地写文件" in note,
+              note if not ok else "竟然直放了")
+
+    # 表里的每一条都必须在官方快照里 —— 手滑打错名字的后果是**静默失效**，
+    # 那比没有这张表更糟（让人以为已经拦住了）。
+    for cli, snap in (("lark-cli", LARK_EFFECTS), ("dws", EFFECTS)):
+        with open(snap, encoding="utf-8") as f:
+            cmds = json.load(f).get("commands") or {}
+        mine = hook._READ_WRITES_LOCAL.get(cli, {})
+        missing = sorted(k for k in mine if k not in cmds)
+        check(f"{cli} 的写盘表与官方快照对得上（{len(mine)} 条）", not missing, str(missing))
+
+    check("dws 侧也覆盖到了",
+          len(hook._READ_WRITES_LOCAL.get("dws", {})) > 0,
+          "%d 条" % len(hook._READ_WRITES_LOCAL.get("dws", {})))
+
+
 def main():
     test_allow()
     test_ask()
@@ -595,6 +650,7 @@ def main():
     test_sensitive()
     test_table()
     test_lark_table()
+    test_local_writes()
     test_exec_identity()
     test_cred()
     test_secret_files()

@@ -109,6 +109,101 @@ _SENSITIVE_READ = {
     "aitable supabase api-key list": "SQL Sheet API Key 元数据",
 }
 
+# 官方标注 read，但**会往本地写文件** —— 按写处理。
+#
+# 起因（2026-11-13）：`lark-cli event consume --output-dir` 被官方整条标成 `read`，
+# 而闸门只看 `risk` ⇒ "官方说是读"的命令可以不经审批往磁盘写文件。
+# 顺着这条把两边所有 `read` 命令的 `--help` 扫了一遍，同类一共 59 条
+# （`lark-cli` 29 / `dws` 30）—— 所以这不是一条命令的例外，是一整个类别。
+# ⚠️ 一开始按命令名粗筛 dws 得到 34 条，**那 12 条之差全是假阳性**
+#    （「获取附件下载链接」只回 URL，不落盘）。名字像不等于会写，要看参数说明。
+#
+# 两档，差别只在"不传参数会不会也落盘"：
+#   · `flag is None`  ⇒ **无条件弹卡**：命令自己带默认落盘路径
+#                        （如 `drive +export` 默认 `.`、`minutes +download` 默认 `./minutes/<token>/`）；
+#   · `flag = "--x"`  ⇒ **参数里出现它才弹**：不传就是纯 stdout
+#                        （如 `markdown +fetch`、`event consume`）。
+#     flag 也可以写成元组 `("--output", "-o")` —— 带短名的命令必须两个都查，
+#     否则 `-o out.pdf` 会从长名判定下面溜过去。
+#
+# ⚠️ 判定看**命令的能力**，不押在"这次刚好没传"上 —— 与 `--dry-run` 那条底线同源。
+#    但也别反过来把"不传就是纯读"的常用命令一律弹掉：卡片刚从 9 张压到 3 张。
+# ⚠️ 来源是各命令自己的 `--help`，不是官方风险等级。CLI 升级后跑
+#    `python -X utf8 tools/probe_local_writes.py` 重扫并比对，差集会列出来。
+_READ_WRITES_LOCAL = {
+    "lark-cli": {
+        # —— A 档：不传参数也落盘（自带默认路径）——
+        "apps +db-data-export":      (None, "不传 --output 也写成 <table>.csv"),
+        "apps +export":              (None, "不传 --output 也写成 <app_id>.zip 到当前目录"),
+        "apps +file-download":       (None, "不传 --output 也按远端文件名落到当前目录"),
+        "base +record-get":          (None, "不传 --output 也自动生成 .ndjson 文件"),
+        "base +record-list":         (None, "不传 --output 也自动生成 .ndjson 文件"),
+        "base +record-search":       (None, "不传 --output 也自动生成 .ndjson 文件"),
+        "drive +export":             (None, "不传 --output-dir 也落到当前目录（默认 .）"),
+        "drive +export-download":    (None, "不传 --output-dir 也落到当前目录（默认 .）"),
+        "drive +version-get":        (None, "不传 --output 也按服务端文件名落到当前目录"),
+        "minutes +detail":           (None, "不传 --output-dir 也写到 ./minutes/<token>/"),
+        "minutes +download":         (None, "不传 --output-dir 也写到 ./minutes/<token>/"),
+        "slides +media-download":    (None, "不传 --output-dir 也写到 .lark-slides/media"),
+        "slides +screenshot":        (None, "不传 --output-dir 也写到 .lark-slides/screenshots"),
+        # —— A 档（继续）：命令**目的**就是把文件取到本地，`--help` 没说"不传就不落盘"
+        #    ⇒ 按"拿不准按写"处理。它们真跑起来时 --output 多半都在，多弹的卡极少。
+        "base +record-download-attachment": (None, "下载附件；--output 是落点，不传也按默认落盘"),
+        "docs +media-download":      (None, "下载文档媒体；--output 是落点"),
+        "docs +media-preview":       (None, "下载文档预览图；--output 是落点"),
+        "docs +resource-download":   (None, "下载文档资源；--output 是落点"),
+        "drive +cover":              (None, "下载封面；`--list-only` 才是「不下载」"),
+        "drive +download":           (None, "下载文件；--output 是落点"),
+        "drive +preview":            (None, "下载预览图；--output 是落点"),
+        "slides +xml-get":           (None, "把 XML 写到当前目录（已存在则覆盖）"),
+        "vc +meeting-screenshot":    (None, "把截图写到当前目录"),
+        # —— B 档：`--help` **明说**不传就不落盘（"omit to …" / "不传则 …"）——
+        "event consume":             ("--output-dir", "把每个事件写成一个文件（不传则走 stdout）"),
+        "markdown +fetch":           ("--output", "把 Markdown 存成文件（omit to return content directly）"),
+        "sheets +cells-get":         ("--output-path", "整份结果写到文件（Omit it to print to stdout）"),
+        "sheets +csv-get":           ("--output-path", "整份结果写到文件（不传则走 stdout）"),
+        "sheets +table-get":         ("--output-path", "整份结果写到文件（不传则走 stdout）"),
+        "sheets +workbook-export":   ("--output-path", "下载导出文件（不传则只触发导出任务）"),
+        "whiteboard +export":        ("--output", "凡 preview 必填；svg/source/raw 不传则直接输出"),
+    },
+    "dws": {
+        # —— A 档：不传参数也落盘（自带默认路径）——
+        "chat +messages-resource-download": (None, "不传 --output 也落到当前目录（默认 .）"),
+        "doc +export":               (None, "不传 --output 也落到当前目录（默认 .）"),
+        "doc +media-download":       (None, "不传 --output 也落到当前目录（默认 .）"),
+        "doc +resource-download":    (None, "不传 --output 也落到当前目录（默认 .）"),
+        "doc download":              (None, "下载类命令，不传 --output 也落到本地"),
+        "drive download":            (None, "不传 --output 也落到当前目录"),
+        "drive download-version":    (None, "不传 --output 也落到当前目录"),
+        "drive export":              (None, "不传 --output 也把导出文件落到本地"),
+        "mail attachment download":  (None, "不传 --output 也落到当前目录（默认 .）"),
+        "minutes +download":         (None, "批量下载默认写到 minutes-downloads/"),
+        # ⚠️ 下面这几条是**全量扫 720 条 read 命令**才捞出来的 ——
+        #    按命令名筛（只看 download/export/fetch…）会漏掉它们。
+        "chat +at-me":               (None, "资源默认落到 ./downloads"),
+        "chat +chat-messages":       (None, "资源默认落到 ./downloads（也可 --output 写 ledger）"),
+        "chat +messages-mget":       (None, "资源默认落到 ./downloads"),
+        "chat +search-msg":          (None, "资源默认落到 ./downloads"),
+        "chat +thread-replies":      (None, "资源默认落到 ./downloads"),
+        "doc +media-preview":        (None, "不传 --output 也写进临时目录"),
+        "minutes +detail":           (None, "默认写到 minutes-* 目录"),
+        # —— B 档：传了写盘参数才落盘 ——
+        "aitable +record-download-attachment": ("--output", "把附件下载到 --output"),
+        "chat message download-media": ("--output", "把媒体下载到 --output"),
+        "doc +export-get":           (("--output", "-o"), "任务完成后把导出文件下载到 --output"),
+        "doc read":                  ("--output", "带 --output（且 --content-format jsonml）时写文件"),
+        "drive +download":           (("--output", "-o"), "把文件下载到 --output"),
+        "drive +version-download":   ("--output", "把历史版本下载到 --output"),
+        "html fetch":                ("--output", "把 HTML 存成文件（不传则只回内容）"),
+        "markdown fetch":            ("--output", "把 Markdown 存成文件（不传则只回内容）"),
+        "minutes +export-pack":      ("--output", "把听记文本产物写进 --output 目录"),
+        "sheet export":              ("--output", "把导出的表格下载到 --output"),
+        "sheet export-csv":          ("--output", "把 CSV 写到 --output（不传则只打 stdout）"),
+        "whiteboard export":         ("--output", "把白板导出到 --output 目录"),
+        "whiteboard export-get":     ("--output", "把白板导出结果下载到 --output 目录"),
+    },
+}
+
 # 命令替换与重定向：出现任何一个，这条命令就不再是"纯读"。
 # ⚠️ 检查的是**单引号之外**的原文：
 #   · 单引号里一切是字面量 ⇒ 可以安全忽略；
@@ -441,6 +536,33 @@ def _is_help(args):
     return False
 
 
+def _local_write_hit(cli, matched, args):
+    """官方标 read、但会往本地写文件 ⇒ 返回卡面理由；否则 None。
+
+    `flag is None` 表示这条命令**不传参数也会落盘**（自带默认路径），所以无条件拦；
+    给了 flag 的，只在参数里真的出现它时才拦 —— 不传就是纯 stdout。
+    """
+    spec = _READ_WRITES_LOCAL.get(cli, {}).get(matched)
+    if not spec:
+        return None
+    flag, why = spec
+    hit = flag is None
+    if not hit:
+        # 长参数认 `--output x` 和 `--output=x`；短参数还要认 `-o x` / `-ox` ——
+        # `dws` 的写盘参数普遍带 `-o` 短名（`dws drive +download` 里 `--output` 就是必填的 `-o`），
+        # 只查长名会让 `-o out.pdf` 直接漏过去。
+        forms = (flag,) if isinstance(flag, str) else tuple(flag)
+        for a in args:
+            for f in forms:
+                if a == f or a.startswith(f + "="):
+                    hit = True
+                elif not f.startswith("--") and a.startswith(f) and len(a) > len(f):
+                    hit = True          # 短参数粘连写法：`-oout.pdf`
+    if hit:
+        return "官方标 read，但会往本地写文件：%s（%s）" % (why, matched)
+    return None
+
+
 def _cli_ok(prog, args):
     """`dws` / `lark-cli` 这一段是不是只读。"""
     # `dws.cmd` / `dws.exe` 是同一个东西的另外两种后缀 —— 归一后再查表
@@ -497,6 +619,9 @@ def _cli_ok(prog, args):
     sensitive = _SENSITIVE_READ.get(matched)
     if sensitive:
         return False, "会读出密钥：%s（%s）" % (sensitive, matched)
+    hit = _local_write_hit(prog, matched, args)
+    if hit:
+        return False, hit
     return True, ""
 
 
@@ -550,6 +675,9 @@ def _lark_ok(args):
         if risk == "high-risk-write":
             return False, "危险操作（%s · high-risk-write，官方要求 --yes）" % matched
         return False, "写操作（%s）" % matched
+    hit = _local_write_hit("lark-cli", matched, args)
+    if hit:
+        return False, hit
     return True, ""
 
 
