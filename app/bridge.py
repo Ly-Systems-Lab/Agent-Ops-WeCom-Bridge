@@ -72,6 +72,10 @@ from host import (  # noqa: F401  （宿主基建）
 from core.store import Store  # noqa: F401
 from core.model_store import ModelStore  # noqa: F401
 from core.model_profiles import ModelProfiles  # noqa: F401
+from core.platform_store import PlatformStore, still_current  # noqa: F401
+from core.platform_switch import Switcher  # noqa: F401
+from core.runtime_file import write_runtime
+from core.control import ControlInbox, control_dir as _control_dir  # noqa: F401
 from core.runner import (  # noqa: F401
     Runner, _clip, _kill_tree, _short_path, approval_configured,
     approval_selfcheck, tool_desc,
@@ -112,6 +116,16 @@ from platforms.slack.outbound import SlackOutboundMixin
 from platforms.slack.render import SlackRenderMixin
 from platforms.slack.transport import SlackTransportMixin
 
+# 切换前的预检：**平台专属**的判据都在各自的包里（内核不认识平台）。
+# 这里只是接线 —— 少了哪一条，`/platform <那个平台>` 会被拒绝（不会闭着眼切）。
+from platforms.wecom.preflight import preflight as wecom_preflight
+from platforms.feishu.preflight import preflight as feishu_preflight
+from platforms.slack.preflight import preflight as slack_preflight
+
+PREFLIGHTS = {"wecom": wecom_preflight,
+              "feishu": feishu_preflight,
+              "slack": slack_preflight}
+
 
 # ---------------- 桥本体：组装 ----------------
 # ⚠️ **入口与行为不变**：`python app\bridge.py` 照旧；企微桥的构造签名照旧；
@@ -130,7 +144,8 @@ class _BridgeCommon(CoreMixin):
                      progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                      approval_dir=None, approval_wait_sec=120, approval_allow="",
                      approval_auto_users="", user_labels="", cc_cwd_dm="",
-                     model_store=None):
+                     model_store=None, platform_name="", platform_switcher=None,
+                     control_dir=""):
         self.allow_users = parse_list(allow_users)
         self.allow_chats = parse_list(allow_chats)
         self.bot_name = bot_name
@@ -139,6 +154,20 @@ class _BridgeCommon(CoreMixin):
         # 模型的唯一真源（core/model_store.py）。None = 本进程没启用热切换
         # （老单测这么构造）⇒ `/model` 会如实回"没有启用"，而不是静默不干活。
         self.model_store = model_store
+        # 本进程装配的是哪个平台（`/status` 要显示它）。**是快照**，不是真源 ——
+        # 真源在 `data/platform.json`，改它对活着的进程没有任何影响。
+        self.platform_name = platform_name or ""
+        # 切换器（core/platform_switch.py）。None = 没启用（测试桩），
+        # `/platform` 会如实回"没有启用"，而不是假装切了。
+        self.platform_switcher = platform_switcher
+        # 控制目录（core/control.py）。留空 = 不启用这条路。
+        self.control_dir = control_dir or ""
+        self._control_inbox = None
+        self._control_dead = False     # 建不出目录时置位，别让看门狗每 20 秒重撞一次
+        # 切换发起时记下"回哪条消息报结果"（`chatid, chat_type`）。成功时由
+        # `_platform_switch_exit` 在断开之前发最后一条 —— 否则用户只会看到
+        # "正在拉起…" 然后这边就没声了，会以为失败了（2026-11-13 用户实测反馈）。
+        self._switch_notice = None
         # 哪些工作目录的审批 hook 已经查过（每个目录只查/只报一次）。
         self._gate_checked = set()
         self.cc_cwd = cc_cwd
@@ -219,7 +248,8 @@ class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
                  approval_auto_users="", user_labels="", cc_cwd_dm="",
-                 model_store=None):
+                 model_store=None, platform_name="", platform_switcher=None,
+                 control_dir=""):
         self.bot_id = bot_id
         self.secret = secret
         self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
@@ -230,7 +260,10 @@ class WeComBridge(_BridgeCommon, WeComPlatformMixin, WeComCodecMixin,
                           approval_allow=approval_allow, user_labels=user_labels,
                           approval_auto_users=approval_auto_users,
                           cc_cwd_dm=cc_cwd_dm,
-                          model_store=model_store)
+                          model_store=model_store,
+                          platform_name=platform_name,
+                          platform_switcher=platform_switcher,
+                          control_dir=control_dir)
 
         self.ws = None
         self.subscribed = threading.Event()
@@ -266,7 +299,8 @@ class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
                  approval_auto_users="", user_labels="", cc_cwd_dm="",
-                 model_store=None, feishu_chunk_bytes=130000):
+                 model_store=None, feishu_chunk_bytes=130000,
+                 platform_name="", platform_switcher=None, control_dir=""):
         self.app_id = app_id
         self.app_secret = app_secret
         self._init_common(allow_users, allow_chats, bot_name, store, runner, cc_cwd,
@@ -277,7 +311,10 @@ class FeishuBridge(_BridgeCommon, FeishuPlatformMixin, FeishuCodecMixin,
                           approval_allow=approval_allow, user_labels=user_labels,
                           approval_auto_users=approval_auto_users,
                           cc_cwd_dm=cc_cwd_dm,
-                          model_store=model_store)
+                          model_store=model_store,
+                          platform_name=platform_name,
+                          platform_switcher=platform_switcher,
+                          control_dir=control_dir)
 
         # 切分粒度按**飞书**的上限来（150 KiB），不照搬企微的 18000 ——
         # 照搬只会把一条 60 KB 的回答无谓地拆成四片。
@@ -319,7 +356,8 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
                  dump_raw=False, stale_rx_sec=0, progress_hb_sec=PROGRESS_HEARTBEAT_SEC,
                  approval_dir=None, approval_wait_sec=120, approval_allow="",
                  approval_auto_users="", user_labels="", cc_cwd_dm="",
-                 model_store=None, slack_chunk_chars=3800, bot_user_id=""):
+                 model_store=None, slack_chunk_chars=3800, bot_user_id="",
+                 platform_name="", platform_switcher=None, control_dir=""):
         self.slack_bot_token = bot_token
         self.slack_app_token = app_token
         self.slack_bot_user_id = bot_user_id
@@ -331,7 +369,10 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
                           approval_allow=approval_allow, user_labels=user_labels,
                           approval_auto_users=approval_auto_users,
                           cc_cwd_dm=cc_cwd_dm,
-                          model_store=model_store)
+                          model_store=model_store,
+                          platform_name=platform_name,
+                          platform_switcher=platform_switcher,
+                          control_dir=control_dir)
 
         # 切分粒度按**字符**算（Slack 的上限是字符，不是字节）。
         self.slack_chunk_chars = max(500, int(slack_chunk_chars or 3800))
@@ -340,6 +381,13 @@ class SlackBridge(_BridgeCommon, SlackPlatformMixin, SlackCodecMixin,
         self.subscribed = threading.Event()
         self._send_lock = threading.Lock()
         self._shape_logged = False
+
+        # 断线积压过滤的时间基准（见 platforms/slack/codec.py `_slack_drop_backlog`）：
+        #   · `_slack_connected_at` —— 本次连接 `hello` 的时刻；0 = 还没连上，不过滤
+        #   · `_slack_skew`         —— 本机时钟 - 平台时钟（秒），从 HTTP `Date` 头量
+        self._slack_connected_at = 0.0
+        self._slack_skew = 0.0
+        self._slack_backlog_dropped = 0
 
         # 入站队列：websocket 读线程只负责入队，处理在 `slack-inbound` 线程上。
         self._in_q = queue.Queue(maxsize=64)
@@ -441,11 +489,21 @@ def main():
         return 0 if rc == 0 else 1
 
     # ---------------- 平台选择 ----------------
-    # `.env` 的 `PLATFORM` 决定装配哪一套适配器。**入口本身不变** ——
-    # `python app\bridge.py` 照旧，别人接过的文档不失效。
-    platform = (cfg("PLATFORM", "wecom") or "wecom").strip().lower()
-    if platform not in ("wecom", "feishu", "slack"):
-        log.error("PLATFORM=%r 不认识（只支持 wecom / feishu / slack）", platform)
+    # 平台的**唯一真源**是 `data/platform.json`（2026-11-13）；`.env` 的 `PLATFORM`
+    # 只是"第一次启动时的种子/兜底"。为什么要多这一层：`.env` 在导入时就读死了，
+    # 想换平台只能手改配置 + 找到常驻进程重启 —— 而聊天里的人两件都做不到。
+    # ⚠️ **读的时机是"每次进程启动"**，不是每条消息：平台决定了装配哪个类、连哪条
+    #    长连接。所以 `/platform` 的切换方式是"写这个文件 + 换进程"，见 core/platform_switch.py。
+    # ⚠️ 任务计划程序每 3 分钟敲一次门，它起的进程读的也是这个文件 ——
+    #    否则切走 3 分钟后就会被任务拉回 `.env` 里那个平台。
+    platform_store = PlatformStore(
+        cfg("CC_PLATFORM_FILE") or os.path.join(ROOT, "data", "platform.json"),
+        seed=cfg("PLATFORM", "wecom"))
+    platform = platform_store.current()
+    if not platform:
+        log.error("PLATFORM=%r 不认识（只支持 wecom / feishu / slack），"
+                  "`data/platform.json` 也没有可用值 —— 拒绝启动",
+                  cfg("PLATFORM", "wecom"))
         return 2
 
     app_id = app_secret = bot_id = secret = ""
@@ -543,6 +601,18 @@ def main():
         return 2
     log.info("[main] 平台 = %s%s", platform, f" · 实例 = {inst}" if inst else "")
 
+    # 切换器。**构造是纯的**（不碰进程、不写盘），`on_ready` 要等 bridge 建好才接得上。
+    # 看守时长做成旋钮：网络差的时候 25 秒可能不够（新进程要现读 .env、建目录、
+    # 跑两道审批自检），但也不该无限等 —— 那段时间里旧平台还活着，用户以为"没切"。
+    switcher = Switcher(platform_store, ROOT,
+                        os.path.join(ROOT, "app", "bridge.py"),
+                        current=platform, instance=inst,
+                        guard_sec=cfg_int("CC_SWITCH_GUARD_SEC", 25),
+                        guard_hard_sec=cfg_int("CC_SWITCH_GUARD_HARD_SEC", 120),
+                        preflights=PREFLIGHTS)
+    runtime_path = switcher.runtime_path
+    control_dir = _control_dir(ROOT)
+
     # 除认证外，还要把 `wecom-cli` 的凭据目录透传给子进程:
     # 不透传的话，模型跑 `wecom-cli` 会落到默认目录
     # （那是另一个机器人的身份）。只透传 WECOM_CLI_*，别的变量不外泄。
@@ -617,6 +687,18 @@ def main():
         # 活着的时候它就该安静地什么都不做（返回非 0 会被记成失败）。
         log.info("[main] 已有实例在跑（互斥量 %s），本次启动放弃。"
                  "要重启请先停掉常驻实例；测试发送同理。", mutex)
+        return 0
+
+    # 🔴 **取到互斥量之后必须再读一次真源**（2026-11-13 真机事故）。
+    # 每 3 分钟敲门那个进程可能在**切换之前**就读了平台（读到的是旧值），
+    # 等它走到这里时，被切走的旧进程刚好退出、互斥量空出来 ⇒ 它会把
+    # **刚刚被切走的平台又拉起来** ⇒ 两个平台同时在线。
+    # 判据只看文件：谁当值由 `platform.json` 说话，不由"谁先读到"说话。
+    # 让位时返回 0（正常退出），下一次任务触发会按新值起来。
+    if not still_current(platform_store, platform):
+        log.warning("[main] 取到互斥量后真源已变成 %r（本进程装的是 %r）"
+                    " ⇒ **让位**，本次启动放弃；下一次任务触发会按新值起来。",
+                    platform_store.current(), platform)
         return 0
 
     store = Store(cfg("CC_DB", DEFAULT_DB))
@@ -726,6 +808,8 @@ def main():
             user_labels=cfg("SLACK_USER_LABELS"),
             cc_cwd_dm=cc_cwd_dm, approval_auto_users=approval_auto_users_raw,
             model_store=model_store,
+            platform_name=platform, platform_switcher=switcher,
+            control_dir=control_dir,
             slack_chunk_chars=cfg_int("SLACK_CHUNK_CHARS", 3800),
             bot_user_id=slack_bot_user_id)
     elif platform == "feishu":
@@ -745,6 +829,8 @@ def main():
             user_labels=cfg("FEISHU_USER_LABELS"),
             cc_cwd_dm=cc_cwd_dm, approval_auto_users=approval_auto_users_raw,
             model_store=model_store,
+            platform_name=platform, platform_switcher=switcher,
+            control_dir=control_dir,
             feishu_chunk_bytes=cfg_int("FEISHU_CHUNK_BYTES", 130000))
     else:
         bridge = Bridge(bot_id, secret, cfg("WECOM_ALLOWED_USERIDS"),
@@ -760,10 +846,15 @@ def main():
                         approval_allow=cfg("CC_APPROVAL_ALLOW"),
                         user_labels=cfg("WECOM_USER_LABELS"),
                         cc_cwd_dm=cc_cwd_dm, approval_auto_users=approval_auto_users_raw,
-                        model_store=model_store)
+                        model_store=model_store, platform_name=platform,
+                        platform_switcher=switcher, control_dir=control_dir)
 
     if cfg_bool("CC_KEEP_AWAKE", True):
         start_keep_awake()
+
+    # 交接：新平台那边写出就绪凭据之后，**这个**进程负责把位置让出去
+    # （先 plat_stop 再硬退，理由见 `_platform_switch_exit` 的注释）。
+    switcher.on_ready = lambda target, detail: bridge._platform_switch_exit(target, detail)
 
     log.info("[main] cwd=%s%s 档位=%s 模型=%s", cc_cwd,
              (f"（私聊={cc_cwd_dm}）" if cc_cwd_dm != cc_cwd else "（私聊与群聊同目录）"),
@@ -874,6 +965,13 @@ def main():
         time.sleep(2)
         bridge.stop_bot()
         return 0 if ok else 1
+
+    # 就绪凭据：**所有会"拒绝启动"的检查都过了**才写（凭据 / 白名单 / 依赖 /
+    # 审批两道自检 / cwd_dm 存在）。切换的看守窗口拿它当"新进程起得来"的判据 ——
+    # 既不依赖退出码（venv 的 pythonw 只是个启动器），也不看"感觉连上了"。
+    write_runtime(runtime_path, platform, instance=inst,
+                  extra={"script": os.path.join(ROOT, "app", "bridge.py"),
+                         "model": runner.live_model() or ""})
 
     try:
         # ⚠️ 走契约的 `plat_run()`，**不要**直接调 `run_forever()` ——

@@ -15,7 +15,8 @@
 | `plat_open_bubble(token, chat, ctype)` | 开一个可反复更新的气泡；不支持则 None | Bubble / None | ② |
 | `plat_deliver(bubble, chat, ctype, text)` | 把最终文本落进气泡；放不下按平台规则兜底 | 未送达列表 | ②③⑥ |
 | `plat_send_chunks(chat, ctype, text)` | 超长文本分片推送 | 未送达列表 | ⑥ |
-| `plat_reply(token, text)` | 一次性被动回复（"收到 / 忙碌"） | bool | ⑤ |
+| `plat_reply(token, text)` | 一次性被动回复（"收到 / 忙碌"）**排队、异步** | bool | ⑤ |
+| `plat_reply_sync(token, text)` | **可选**：同步被动回复，进程马上要退出时用（内核的"交接回执"）。不实现 ⇒ 内核退回 `plat_send_text` | bool | ⑤ |
 | `plat_status_card(chat, ctype, user)` | 渲染状态卡 | 平台卡片对象 | ④ |
 | `plat_approval_card(req)` | 渲染审批卡 | 平台卡片对象 | ④ |
 | `plat_approval_update_card(token, req, allow, user)` | 审批卡改成已处理 | bool | ③④ |

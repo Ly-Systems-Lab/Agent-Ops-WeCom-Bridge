@@ -73,6 +73,9 @@ class FeishuTransportMixin:
                  ("reply-worker", self._reply_worker)]
         if self.approval_dir:
             specs.append(("approval-loop", self._approval_loop))
+        # 内核自己的常驻线程（控制目录那条路）。**必须并进这份清单** ——
+        # 直接起的话它死了看门狗不知道，表现就是"投进去的命令永远没人接"。
+        specs += self._aux_thread_specs()
         return specs
 
     def feishu_run_forever(self):

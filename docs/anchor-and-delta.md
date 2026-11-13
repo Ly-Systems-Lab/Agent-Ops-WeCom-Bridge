@@ -30,11 +30,11 @@
 
 因为边界是分开的，而且**分层不是口号，是被检查的**：
 
-| 层 | 2026-11-12 的企微适配 | 换 harness 时要动吗 |
+| 层 | 2026-11-13 的企微适配 | 换 harness 时要动吗 |
 |---|---|---|
-| 平台层 `app/platforms/wecom/` | 6 个文件 ~49 KB | 不动 |
-| 内核 `app/core/` | `bridge_core.py` ~81 KB | 不动 |
-| 契约 `app/core/contract.py` | ~2.6 KB | 不动 |
+| 平台层 `app/platforms/wecom/` | 7 个文件 ~54 KB | 不动 |
+| 内核 `app/core/` | `bridge_core.py` ~91 KB（2026-11-13 加 `/platform` 后） | 不动 |
+| 契约 `app/core/contract.py` | ~3.6 KB | 不动 |
 | 运行器 / harness 适配 | `app/core/runner.py` 或你自己的 `<x>_runner.py` | **只有这里动** |
 
 `tools/check_layers.py` 守着这条线：内核里不许出现平台专属的帧名字、错误码、WebSocket。

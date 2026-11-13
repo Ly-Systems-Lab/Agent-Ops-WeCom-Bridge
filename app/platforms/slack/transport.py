@@ -157,6 +157,9 @@ class SlackTransportMixin:
                 return {"ok": False, "error": "network", "detail": detail,
                         "sent_unknown": not unsent}
 
+            # 顺手量一次时钟偏移（只用于断线积压的判据，见 `_slack_note_skew`）。
+            self._slack_note_skew(r.headers.get("Date"))
+
             if r.status_code == 429:
                 try:
                     wait = float(r.headers.get("Retry-After") or 1)
@@ -177,6 +180,33 @@ class SlackTransportMixin:
             except Exception:
                 return {"ok": False, "error": "http_%s" % r.status_code,
                         "raw": r.text[:200]}
+
+    def _slack_note_skew(self, date_hdr):
+        """从 HTTP 响应头 `Date` 量一次「本机 − 平台」的时间差（秒）。
+
+        **为什么要这一个数**：断线积压过滤要拿"事件 `ts`"去比"本次连接的时刻"，
+        而 `ts` 是**平台的时钟**。直接拿本机 `time.time()` 当基准的话，
+        本机快 30 秒就会把重连后的**正常**消息全判成积压 ⇒ 机器人"突然不说话了"，
+        那比偶尔答一条旧消息糟得多。
+
+        `Date` 头精度只有秒、且经不经过本地加速器都可能 —— 所以它只是**修正量**，
+        真正的容差靠 `CC_SLACK_BACKLOG_GRACE_SEC`（默认 10 秒）。
+        拿不到/解不出来就保持上一次的值（初始 0 ⇒ 退回用本机时钟）。
+        """
+        if not date_hdr:
+            return
+        try:
+            from email.utils import parsedate_to_datetime
+            from datetime import timezone
+            srv = parsedate_to_datetime(str(date_hdr))
+            if srv.tzinfo is None:          # 少数头不带 GMT 后缀
+                srv = srv.replace(tzinfo=timezone.utc)
+            skew = time.time() - srv.timestamp()
+        except Exception:
+            return
+        if abs(skew) > 86400:               # 差一天以上 ⇒ 是坏头，别拿它当基准
+            return
+        self._slack_skew = skew
 
     # -- 建连 --
 
@@ -229,6 +259,9 @@ class SlackTransportMixin:
 
     def _slack_on_close(self, ws, code, msg):
         self.subscribed.clear()
+        # 连接没了 ⇒ 时间原点作废。宁可"这个窗口内不过滤"，也不要拿上一次
+        # 连接的时刻当基准（那会把重连后第一批**正常**消息误判成积压）。
+        self._slack_connected_at = 0.0
         log.info("[slack] ws closed code=%s msg=%s", code, msg)
 
     def _slack_on_message(self, ws, raw):
@@ -249,6 +282,10 @@ class SlackTransportMixin:
             if self._backoff != BACKOFF_START:
                 log.info("[slack] 退避重置 %ss -> %ss", self._backoff, BACKOFF_START)
             self._backoff = BACKOFF_START
+            # 本次连接的时间原点：比它早的事件就是**断线期间积压的**，
+            # 由 codec 那边丢掉（见 `_slack_drop_backlog`）。
+            self._slack_connected_at = time.time()
+            self._slack_backlog_dropped = 0
             self.subscribed.set()
             return
 
@@ -275,7 +312,12 @@ class SlackTransportMixin:
 
         if typ == "events_api":
             # 只有解析 + 入队，真正的处理在 `slack-inbound` 线程上。
-            self._slack_on_event(payload)
+            # `retry_attempt` 只在**投递被重试过**时才非 0，一并交下去只为了
+            # 让"丢弃断线积压"那行日志能自证（见 codec `_slack_drop_backlog`）。
+            self._slack_on_event(payload, {
+                "retry_attempt": msg.get("retry_attempt") or 0,
+                "retry_reason": msg.get("retry_reason") or "",
+            })
             return
 
         if typ == "interactive":
@@ -308,6 +350,8 @@ class SlackTransportMixin:
                  ("slack-inbound", self._inbound_worker)]
         if self.approval_dir:
             specs.append(("approval-loop", self._approval_loop))
+        # 内核自己的常驻线程（控制目录那条路）。理由同飞书那份。
+        specs += self._aux_thread_specs()
         return specs
 
     def slack_run_forever(self):

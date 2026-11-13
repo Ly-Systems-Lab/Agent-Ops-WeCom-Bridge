@@ -6,6 +6,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import queue
 import tempfile
@@ -16,6 +17,7 @@ from datetime import datetime
 
 from common import APPROVAL_POLL_SEC, PROGRESS_HEARTBEAT_SEC, knob, log
 from core.model_store import valid_model_name
+from core.platform_switch import platform_list_text
 from core.exec_identity import describe as _exec_identity
 from core.runner import approval_configured
 from core.text import _looks_like_resume_failure, safe_to_retry_resume
@@ -420,6 +422,220 @@ class CoreMixin:
         return "\n".join(lines)
 
 
+    # -- /platform：平台的唯一真源是 data/platform.json（切换要重启进程）--
+
+    def _platform_async(self, arg, chatid, chat_type, userid, response_url):
+        """在旁路线程里处理 `/platform`。
+
+        **为什么不能同步**：预检要现读 `.env`、查依赖、建目录；切换还要起进程再看守
+        最多 25 秒。放在回调线程上会把后面所有消息一起堵住 —— 而 `/stop` 也在那条线上。
+        """
+        def _go():
+            post = None
+            try:
+                text, post = self._platform_command(arg, userid, chatid,
+                                                    chat_type, response_url)
+            except Exception as e:                 # noqa: BLE001
+                log.exception("[platform] /platform 处理失败")
+                text = f"⚠️ 处理 `/platform` 时出错：{type(e).__name__}: {e}"
+            try:
+                self.plat_reply(response_url, text)
+            except Exception as e:                 # noqa: BLE001
+                # 回执发不出去 ⇒ 用户会以为"没反应"。至少日志里要留着。
+                log.warning("[platform] 回执发不出去：%s", e)
+            if callable(post):
+                post()
+        threading.Thread(target=_go, daemon=True, name="platform-cmd").start()
+
+    def _platform_command(self, arg, userid, chatid, chat_type, response_url=""):
+        """返回 `(text, post)`。`post` = 回执发完之后才做的动作（动手换进程）。"""
+        sw = getattr(self, "platform_switcher", None)
+        if sw is None:
+            return ("本进程没有启用平台切换（没有 switcher）。\n\n"
+                    "> 平台仍由 `.env` 的 `PLATFORM` 决定，改完需要重启桥。"), None
+        arg = (arg or "").strip().lower()
+
+        if not arg or arg in ("list", "ls"):
+            return platform_list_text(sw.store), None
+
+        if arg in ("reset", "default"):
+            arg = (sw.store.seed or "").strip()
+            if not arg:
+                return ("❌ `.env` 里没有可用的 `PLATFORM`，不知道 reset 到哪。"), None
+
+        ok, text = sw.request(arg, actor=userid)
+        if not ok:
+            return text, None
+
+        def _later(t):
+            """失败时**主动**发一条（不能再用被动回复的 token —— 那是几十秒前的事了）。"""
+            # 失败 ⇒ 这条会话的"交接回执"就没有下文了，清掉，别让它挂到下一次切换上。
+            self._switch_notice = None
+            try:
+                self.plat_send_text(chatid, chat_type, t)
+            except Exception as e:                 # noqa: BLE001
+                log.error("[platform] 回滚通知发不出去：%s", e)
+
+        def _post():
+            # 成功时要在这边（即将断开的平台）回最后一句 —— 不然用户只看到
+            # "正在拉起…" 就没了，会和"失败"分不清。
+            # ⚠️ **连 token 一起记**：有的平台（Slack）"发到会话"和"回在你那句话下面"
+            # 是**两个不同的位置**（线程）。用 token 才能落在用户正看着的地方。
+            self._switch_notice = (chatid, chat_type, response_url or "")
+            sw.begin(arg, sw.current, _later)
+
+        return text, _post
+
+    def _platform_switch_exit(self, target="", detail=""):
+        """把进程让出去。
+
+        **为什么是硬退**（`os._exit`）：飞书的长连接是 `feishu_ws.start()` 这个阻塞调用，
+        SDK 没有公开的 stop 接口 ⇒ 置 `stop` 只能让**我们自己的**线程退出，
+        主线程会一直挂在 SDK 里。想在进程内"优雅退出并让 main 返回"是做不到的。
+        """
+        log.info("[switch] 交接完成（%s %s），本进程退出", target, detail)
+        # 最后一句：在这边（马上要断开的平台）说一声"成了"。
+        # 用户 2026-11-13 实测反馈：只看到"正在拉起…"然后这边就没声了，
+        # 分不清是成功还是失败 —— 而失败**会**另发一条，所以"没有下文"读起来像成功、
+        # 又像卡住。这条消息把"成功"变成显式的。
+        self._switch_notice_send(target, detail)
+        try:
+            self.plat_stop()
+        except Exception as e:                     # noqa: BLE001
+            log.warning("[switch] plat_stop 失败：%s", e)
+        time.sleep(0.3)                            # 让最后几行日志落盘
+        logging.shutdown()
+        os._exit(0)
+
+    def _switch_notice_send(self, target="", detail=""):
+        """在**即将断开的**平台上说最后一句「已交接给 X」。
+
+        用户 2026-11-13 实测反馈：只看到"正在拉起…"然后这边就没声了，分不清成功还是
+        失败 —— 而失败**会**另发一条，所以"没有下文"读起来既像成功又像卡住。
+
+        两条路（顺序不能反）：
+          ① `plat_reply_sync`（可选契约点）—— **回在你那条命令下面**。
+             Slack 必须走这条：按会话发会落进**上一条**消息的线程里，用户看不见。
+          ② 退路 `plat_send_text` —— 按会话推送。企微 / 飞书走这条（它们的
+             `plat_reply` 是排队异步的，进程马上要退，排队等于丢弃）。
+
+        返回 `(sent, how)`，`how` 是 `"reply"` / `"send"` / `""`（供日志与单测）。
+        """
+        notice = getattr(self, "_switch_notice", None)
+        if not notice:
+            return False, ""
+        chat, ctype = notice[0], notice[1]
+        token = notice[2] if len(notice) > 2 else ""
+        text = (f"✅ 已交接给 `{target}`（{detail}）。\n"
+                f"> 这边马上断开；到 `{target}` 发一句话就能继续。")
+        sent, how = False, ""
+        fn = getattr(self, "plat_reply_sync", None)
+        if token and callable(fn):
+            try:
+                sent = bool(fn(token, text))
+                how = "reply" if sent else ""
+            except Exception as e:                 # noqa: BLE001
+                log.warning("[switch] 交接回执（同线程）失败：%s", e)
+        if not sent:
+            try:
+                r = self.plat_send_text(chat, ctype, text, wait=False)
+                sent = bool((r or {}).get("sent", True))
+                how = "send" if sent else ""
+            except Exception as e:                 # noqa: BLE001
+                log.warning("[switch] 交接回执发不出去：%s", e)
+        log.info("[switch] 交接回执（%s）→ %s", target,
+                 f"已发出（{how}）" if sent else "**没发出去**")
+        return sent, how
+
+    # -- 控制目录（文件协议）：任何 Agent / 人 / 脚本都能用 --
+
+    def _aux_thread_specs(self):
+        """内核自己的常驻线程清单（平台无关）。平台层要把这个并进自己的清单里。
+
+        ⚠️ 收成一处（而不是让三个平台各写一份）的理由见飞书那份注释：
+        漏一项不会报错，表现是"某条路静默不工作"。
+        """
+        specs = []
+        if getattr(self, "control_dir", ""):
+            specs.append(("control-loop", self._control_loop))
+        return specs
+
+    def _control_loop(self):
+        if self._control_dead:
+            return
+        from core.control import ControlInbox
+        if self._control_inbox is None:
+            self._control_inbox = ControlInbox(self.control_dir,
+                                               self._control_handlers())
+        try:
+            self._control_inbox.loop()
+        finally:
+            # 目录建不出来时 `loop()` 会立刻返回 —— 不让看门狗每 20 秒重撞一次。
+            # ⚠️ 构造本身失败时 `_control_inbox` 还是 None，别再把它当对象用
+            #    （否则真正的异常会被 finally 里的 AttributeError 盖掉）。
+            if (self._control_inbox is not None
+                    and not os.path.isdir(self._control_inbox.inbox)):
+                self._control_dead = True
+                log.error("[control] 控制目录不可用，停止重试：%s",
+                          self._control_inbox.inbox)
+
+    def _control_handlers(self):
+        return {
+            "status": self._control_status,
+            "platforms": self._control_platforms,
+            "switch_platform": self._control_switch,
+        }
+
+    def _control_platforms(self, args, by):
+        sw = getattr(self, "platform_switcher", None)
+        if sw is None:
+            return False, "这个进程没有启用平台切换（没有 switcher）"
+        return True, platform_list_text(sw.store)
+
+    def _control_status(self, args, by):
+        sw = getattr(self, "platform_switcher", None)
+        lines = [f"platform={self.platform_name or '(未知)'}",
+                 f"pid={os.getpid()}"]
+        if sw is not None:
+            snap = sw.store.snapshot()
+            lines.append(f"platform.current={snap['current'] or '(空)'}")
+            lines.append(f"platform.seed={snap['seed'] or '(空)'}")
+            lines.append(f"platform.path={snap['path']}")
+            lines.append(f"platform.updated_at={snap['updated_at'] or '(无)'}")
+            from core.runtime_file import read_runtime
+            rt = read_runtime(sw.runtime_path)
+            if rt:
+                lines.append(f"runtime.platform={rt.get('platform')}")
+                lines.append(f"runtime.pid={rt.get('pid')}")
+                lines.append(f"runtime.started_at={rt.get('started_at_h') or ''}")
+            else:
+                lines.append("runtime=(没有就绪凭据)")
+        try:
+            lines.append(f"model={self.runner.live_model() or '(默认)'}")
+        except Exception:                          # noqa: BLE001
+            pass
+        with self._job_lock:
+            lines.append(f"jobs.running={len(self._current)}")
+        return True, "\n".join(lines)
+
+    def _control_switch(self, args, by):
+        sw = getattr(self, "platform_switcher", None)
+        if sw is None:
+            return False, "这个进程没有启用平台切换（没有 switcher）"
+        target = str((args or {}).get("to") or "").strip().lower()
+        if not target:
+            return False, "缺少 `to`（例如 {\"to\": \"feishu\"}）"
+        ok, text = sw.request(target, actor=by or "control")
+        if not ok:
+            return False, text
+
+        def _post():
+            # 控制目录这条路**没有聊天会话**可通知 ⇒ 失败详情只落日志和
+            # `data/runtime/last-switch-*.json`，不硬凑一条消息发到某个会话里
+            # （那多半会发错人 —— 会话表是三个平台共用的）。
+            sw.begin(target, sw.current, None)
+        return True, text, _post
+
     # -- /status 卡片 --
 
 
@@ -459,7 +675,10 @@ class CoreMixin:
             ("当前任务", task),
             ("上下文", usage or "—（重启后首轮还没跑）"),
             ("会话", (sid or "")[:8] or "（无，下一轮新建）"),
-            ("档位", f"{self.runner.perm_mode or '默认'} / 超时 {self.runner.timeout}s"),
+            # ⚠️ 平台**并进「档位」这一行**，不单独占一行：卡片上限就是 6 行
+            # （见上面那段 42035 的注释）。「从哪进来」和「有多大权限」放一起读着也顺。
+            ("档位", f"{self.runner.perm_mode or '默认'} / 超时 {self.runner.timeout}s"
+                     f" · 平台 {self.platform_name or '（未知）'}"),
             ("模型", model or "（未设置，用 claude 默认）"),
             ("工作区", cwd),
         ]
@@ -1341,6 +1560,13 @@ class CoreMixin:
                 or lowered.startswith("/model\t")):
             self._model_async(text.strip()[len("/model"):].strip(),
                               chatid, chat_type, userid, response_url)
+            return
+        # `/platform` 同理：带参数，只能前缀匹配。**它不是给模型的指令** ——
+        # 在这里拦下、由桥自己执行（`/platform` 不进队列、不进会话上下文）。
+        if (lowered == "/platform" or lowered.startswith("/platform ")
+                or lowered.startswith("/platform\t")):
+            self._platform_async(text.strip()[len("/platform"):].strip(),
+                                 chatid, chat_type, userid, response_url)
             return
 
         # —— 普通任务：**本会话**忙就丢弃，别的会话在跑不影响 ——

@@ -50,6 +50,14 @@ class SlackPlatformMixin:
     def plat_reply(self, token, content):
         return self.reply(token, content)
 
+    # ⑤' **同步**被动回复（契约里的可选点；内核拿它发"交接回执"）
+    #    为什么 Slack 必须提供：`plat_send_text` 按"记住的线程"发，而那条线程属于
+    #    **上一条**消息；用户发了新命令之后，回执会落进旧线程里 ⇒ 看起来"没发"。
+    #    Slack 的 `reply` 本身就是同步 HTTP（企微/飞书那条是排队，进程退出就会丢，
+    #    所以那两个**不实现**这一点、走内核的 `plat_send_text` 退路）。
+    def plat_reply_sync(self, token, content):
+        return bool(self.reply(token, content))
+
     # ⑥ 分片与错误码
     def plat_send_chunks(self, chatid, chat_type, text):
         return self.send_chunks(chatid, chat_type, text)

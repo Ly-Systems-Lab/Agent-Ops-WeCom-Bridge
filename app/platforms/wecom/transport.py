@@ -234,7 +234,8 @@ class WeComTransportMixin:
             for name, target in (("cc-worker", self._worker),
                                  ("wecom-heartbeat", self._heartbeat_loop),
                                  ("reply-worker", self._reply_worker),
-                                 ("approval-loop", self._approval_loop)):
+                                 ("approval-loop", self._approval_loop),
+                                 *self._aux_thread_specs()):
                 t = self._threads.get(name)
                 if t is None or t.is_alive():
                     continue
@@ -277,6 +278,11 @@ class WeComTransportMixin:
         if self.approval_dir:
             self._threads["approval-loop"] = threading.Thread(
                 target=self._approval_loop, daemon=True, name="approval-loop")
+        # 内核自己的常驻线程（控制目录那条路）。和飞书/Slack 一样收在 `_aux_thread_specs`
+        # 里 —— 看门狗读的是同一份，漏一项就会被看门狗补上，不会"静默不工作"。
+        for name, target in self._aux_thread_specs():
+            self._threads[name] = threading.Thread(
+                target=target, daemon=True, name=name)
         for t in self._threads.values():
             t.start()
         threading.Thread(target=self._watchdog_loop, daemon=True,

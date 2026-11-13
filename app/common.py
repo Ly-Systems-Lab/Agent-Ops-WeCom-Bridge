@@ -20,7 +20,7 @@ LOGDIR = os.path.join(ROOT, "logs")
 DEFAULT_DB = os.path.join(ROOT, "data", "bridge.db")
 
 # 流式消息（aibot_respond_msg + stream.id）：让「收到，处理中…」和正文**共用一个气泡**。
-# 两条硬约束来自官方文档 path/101463（原文已逐条核对）：
+# 两条硬约束来自官方文档 path/101463（原文已核对）：
 #   · 从首帧起 **10 分钟**内必须 finish=true，否则平台自动结束、消息不再可更新；
 #   · 单帧 content ≤ **20480 字节**（和 aibot_send_msg 的 markdown 上限一致）。
 STREAM_MAX_SEC = 570          # 10 分钟窗口留 30 秒余量，别卡着边界发
@@ -132,6 +132,34 @@ def parse_list(s):
     （2026-10-29 外部代码复核指出，已用代码复现。）
     """
     return {x.strip() for x in (s or "").split(",") if x.strip()}
+
+def env_bool(get, key, default=True):
+    """用**任意的 get(key, default)** 读一个布尔量（和 `cfg_bool` 同一条口径）。
+
+    为什么单独一个：切换前的预检要读"**现读一遍的** `.env`"（用户可能刚把凭据写进去），
+    而不是进程启动时那份快照 —— 所以不能直接用绑死在 `ENV` 上的 `cfg_bool`。
+    """
+    v = (get(key, "1" if default else "0") or "").strip().lower()
+    return v not in ("0", "false", "no", "off", "")
+
+
+def mask_id(uid):
+    """只露尾号的写法。用在不该整条打印 ID 的地方（比如会出现在群聊里的回执）。"""
+    uid = str(uid or "")
+    return f"…{uid[-4:]}" if len(uid) > 4 else "…"
+
+
+def render_whitelist(ids, labels):
+    """把白名单渲染成"名字 / 露尾号"，返回 `(名字列表, 没配名字的人数)`。
+
+    `userid` / `open_id` 属于"只在命令之间流转"的东西 —— 但它又要能被发起人
+    **自己核对**（他不在名单里，切过去就回不来了）。所以有显示名就用显示名，
+    没有就只露尾号。
+    """
+    ids = sorted(ids)
+    names = [labels.get(i) or mask_id(i) for i in ids]
+    return names, sum(1 for i in ids if not labels.get(i))
+
 
 def parse_labels(s):
     """`userid=显示名` 列表（逗号分隔）→ dict。
