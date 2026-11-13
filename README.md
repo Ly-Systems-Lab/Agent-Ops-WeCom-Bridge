@@ -23,11 +23,14 @@
 
 ## 🎬 演示
 
-**[▶ 手机上发指令，结果落在 Windows 本地](https://www.bilibili.com/video/BV1nY4w6kEiy)**
+| 看什么 | 视频 |
+|---|---|
+| **总览** · 一个群里的多个 Agent（Claude Code / Codex / OpenCode / DSH …），外加一个纯模型答疑位（DeepSeek），跨企微与飞书 | [▶ 观看](https://www.bilibili.com/video/BV1LBW167Epz) |
+| **交互基准** · 手机上发指令，结果落在 Windows 本地；任务卡片（允许 / 拒绝 / 实时进度 / 上下文余量）与 `/stop` 即刻停止 | [▶ 观看](https://www.bilibili.com/video/BV1nY4w6kEiy) |
+| **幽灵漫游** · 三平台互相热切换（企微 / 飞书 / Slack）+ 联邦式中枢 | [▶ 观看](https://www.bilibili.com/video/BV1U7WB6mEVD) |
+| **识图与主动推送** · DSH 与 CC 的对话记录（含它自己整理的企微官方能力表） | [▶ 观看](https://www.bilibili.com/video/BV1MgWo6KEzF) |
 
-包含任务卡片（允许 / 拒绝 / 实时进度 / 上下文余量）与 `/stop` 即刻停止的完整演示。
-
-🖼️ **[实拍图集 →](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture/blob/main/docs/showcase/README.md)** · 手机端下指令、Windows 本地干活、Agent 自动修 Bug
+🖼️ **[实拍图集 →](https://github.com/Ly-Systems-Lab/Agent-Ops-Architecture/blob/main/docs/showcase/README.md)** · 手机端下指令、Windows 本地干活、Agent 自动修 Bug、读者自己搭的一份
 
 ## 🧩 一份内核，不同的聊天平台
 
@@ -55,6 +58,7 @@
 
 「平台是入口，不是身份」的操作版就是这一条：`/platform wecom` · `/platform feishu` · `/platform slack`。
 换的是"从哪扇门进来"，不是内核、不是工作区、不是记忆。
+🎬 **[三平台互相热切换的完整演示](https://www.bilibili.com/video/BV1U7WB6mEVD)**
 
 **实测（2026-11-13，三个平台互切）**：切走再切回，问一句「我刚刚说了什么？」——
 它答的正是切换前那个窗口里的对话。因为会话本来就**不属于平台**，只属于「哪个窗口 + 谁」。
@@ -74,7 +78,7 @@ Agent 不会跟着消失 —— 它也**没有把"自己是谁"押在某一家�
 - 同一个模式：**附着点决定"从哪儿被找到"，但 Agent 不属于任何一个附着点。**
 - 「任何」是目标（**生态中的生态 · 一切皆插件**）；企微 / 飞书 / Slack 是这条路的
   **最小闭环验证** —— 三个形态完全不同的入口（自建长连接 / 官方 SDK / Socket Mode）都接上了，
-  **一切皆插件**：这套约定不是围着某一家写的，也不是给某一家开的特例。
+  **一切皆插件**，这套约定不是围着某一家写的，也不是给某一家开的特例。
 
 </details>
 
