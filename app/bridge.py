@@ -35,6 +35,7 @@ import logging
 import os
 import queue
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -54,13 +55,13 @@ import websocket  # websocket-client
 # 兼容旧调用：`bridge.XXX` 在测试与 tools/probe_hooks.py 里被直接引用。
 from common import (  # noqa: F401  （常量与配置）
     APPROVAL_POLL_SEC, BACKOFF_MAX, BACKOFF_START, DEFAULT_DB,
-    DEFAULT_DISALLOWED, DEFAULT_PERM_MODE, ENV, HEARTBEAT_SEC, ID_FIELDS,
-    LOGDIR, LOG_KEEP_DAYS, MUTEX_NAME, PROGRESS_HEARTBEAT_SEC,
+    DEFAULT_DISALLOWED, DEFAULT_PERM_MODE, ENV, GATE_SHIM_NAMES, HEARTBEAT_SEC,
+    ID_FIELDS, LOGDIR, LOG_KEEP_DAYS, MUTEX_NAME, PROGRESS_HEARTBEAT_SEC,
     PROGRESS_RAW_CAP, ROOT, SEEN_KEEP_DAYS, SEND_WAIT_SEC, STALE_RX_SEC,
     STREAM_LATCH_SEC, STREAM_LIMIT, STREAM_MAX_SEC, TASK_NAME, WATCHDOG_SEC,
     WS_URL, bridge_instance, bridge_instance_problem, cfg, cfg_bool, cfg_int,
-    default_approval_dir, load_env, log, mutex_name, parse_labels, parse_list,
-    task_name, whitelist_gate,
+    default_approval_dir, gate_shim_dir, load_env, log, mutex_name, parse_labels,
+    parse_list, task_name, whitelist_gate, write_gate_shims,
 )
 from host import (  # noqa: F401  （宿主基建）
     DailyFileHandler, _autostart_xml, _schtasks, _xml_escape,
@@ -618,6 +619,29 @@ def main():
     # （那是另一个机器人的身份）。只透传 WECOM_CLI_*，别的变量不外泄。
     inject = {k: v for k, v in ENV.items()
               if k.startswith("ANTHROPIC") or k.startswith("WECOM_CLI_")}
+    # 闸门的**包装器**（v1）：把 dws / lark-cli 的 shim 垫到子进程 PATH 最前。
+    # 谁调这两个 CLI 都先经过 `tools/gate_wrap.py`：只读直跑、要写就发卡等点击。
+    # 同时注入 `CC_GATE_SHIM_DIR` —— hook 靠它区分"经过包装器（让路）"和
+    # "绕过包装器（拒绝）"。关掉就写 `CC_GATE_SHIM=0`（这时回到 hook 自己判读写）。
+    if cfg_bool("CC_GATE_SHIM", True):
+        try:
+            # 只为**装了的** CLI 生成 shim：没装的话让 shell 照常报 command not found，
+            # 不要凭空造出一个"存在但跑不动"的命令。
+            names = tuple(n for n in GATE_SHIM_NAMES if shutil.which(n))
+            if names:
+                write_gate_shims(names=names)
+                shim_dir = gate_shim_dir()
+                inject["CC_GATE_SHIM_DIR"] = shim_dir
+                inject["PATH"] = shim_dir + os.pathsep + (os.environ.get("PATH") or "")
+                log.info("[gate] 包装器已挂上：%s（%s 会先经过闸门）",
+                         shim_dir, " / ".join(names))
+            else:
+                log.info("[gate] PATH 上没有 dws / lark-cli，跳过包装器")
+        except Exception as e:                       # noqa: BLE001
+            # 生成不了就**不垫 PATH**（回到老行为），但要说出来 ——
+            # 静默失败会让人以为闸门挂着，其实一条命令都没经过它。
+            log.warning("[gate] 生成包装器 shim 失败（%s: %s）⇒ 不垫 PATH",
+                        type(e).__name__, e)
     if not inject.get("ANTHROPIC_AUTH_TOKEN"):
         log.error("桥的 .env 里没有 ANTHROPIC_AUTH_TOKEN。"
                   "因为用 --setting-sources 排掉了 user 设置，认证必须自带。")

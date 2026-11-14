@@ -336,6 +336,30 @@ def test_cred():
         ("Bash", {"command": "ls interop/"}, "", False, "普通 ls 不受影响"),
         ("Read", {"file_path": os.path.join(repo, "interop", "dws_effects.json")}, "",
          False, "仓库里的 dws_ 文件不误伤"),
+        # —— 2026-11-14 补（下游实测踩到）：PowerShell 的 `$env:` 形态 ——
+        ("Bash", {"command": 'Get-ChildItem "$env:USERPROFILE\\.lark-cli"'}, "", True,
+         "$env:USERPROFILE 形态（硬拒，不再掉到弹卡）"),
+        ("Bash", {"command": 'Get-Content "${env:USERPROFILE}/.dws/token.json"'}, "", True,
+         "${env:USERPROFILE} 形态"),
+        ("Bash", {"command": "type $env:HOME\\.dsh\\.credentials.yaml"}, "", True,
+         "$env:HOME 形态"),
+        ("Bash", {"command": "ls $env:APPDATA\\.config\\wecom"}, "", True,
+         "$env:APPDATA 形态"),
+        ("Read", {"file_path": "$env:USERPROFILE\\.lark-cli\\config.json"}, "", True,
+         "Read 带 $env: 路径 —— 以前会被**直接放行**（真漏洞）"),
+        ("Read", {"file_path": "${env:USERPROFILE}/.dws/token.json"}, "", True,
+         "Read 带 ${env:} 路径"),
+        # 免卡模式下没有"弹一张卡"兜底 ⇒ 运行时拼出来的路径也要认
+        ("Bash", {"command": "$p = Join-Path $env:USERPROFILE '.lark-cli\\config.json'; "
+                              "Test-Path -LiteralPath $p"}, "", True,
+         "Join-Path 拼出来的路径（免卡下曾直接放行）"),
+        # 边界：名字像但不是那个目录 —— 裸名匹配不能误伤
+        ("Read", {"file_path": os.path.join(home, ".dws-backup", "x")}, "", False,
+         "~/.dws-backup 不是存储目录"),
+        ("Read", {"file_path": os.path.join(home, ".lark-cli.bak", "x")}, "", False,
+         "~/.lark-cli.bak 不是存储目录"),
+        ("Bash", {"command": "ls ~/.dws-backup/x"}, "", False,
+         "命令里写到 .dws-backup 也不误伤"),
     ]
     for name, ti, cwd, want, why in cases:
         got = hook._cred_hit(name, ti, cwd)

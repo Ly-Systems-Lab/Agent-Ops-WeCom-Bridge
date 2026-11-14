@@ -13,9 +13,14 @@
      ⇒ 卡片这条**不走队列**，就在回调线程里跑完内核那一小段并返回。
 """
 
+import hashlib
 import json
+import os
 import queue
+import tempfile
 import threading
+import time
+from datetime import datetime
 
 from common import log
 
@@ -102,6 +107,23 @@ class FeishuCodecMixin:
             except Exception:
                 text = ""
 
+        # 飞书图片：`content` 是 `{"image_key":"img_v3_…"}` —— **没有直链**。
+        # 要拿字节必须调开放平台 API（`im/v1/messages/{mid}/resources/{key}?type=image`），
+        # 那件事放在 `feishu-inbound` 线程里做（见 `_feishu_fetch_image`）：
+        # 这里跑在 SDK 的 asyncio 循环上，**绝不能**发阻塞请求（模块头 ①）。
+        image_key = ""
+        image_keys = []
+        if msg_type == "image":
+            try:
+                blob = json.loads(m.content or "{}")
+                if isinstance(blob, dict):
+                    # 只留**字段名**，供排错用（值可能是 `img_v3_…`，不写日志）。
+                    # 与企微那侧同一口径：真机第一张图就是"平台到底给了什么"的答案。
+                    image_keys = sorted(blob.keys())
+                    image_key = blob.get("image_key", "") or ""
+            except Exception:
+                image_key = ""
+
         # 群聊只认 @ 我的消息。本应用申请的是 `im:message.group_at_msg`（协议级隔离），
         # 正常收不到没 @ 的 —— 这条检查是**应用层的第二道**，防的是将来权限被放宽。
         if not is_single and not mentions:
@@ -143,7 +165,81 @@ class FeishuCodecMixin:
             "dedupe_key": mid,
             # 气泡用 message_id 建（回在那条消息下面）；也为 None 时的退化路径服务
             "reply_token": mid,
+            # 飞书图片的取图凭据（事件里只有这个，没有 URL）
+            "image_key": image_key,
+            # 回调里**实际出现了哪些键** —— 只在日志/排错里用（同企微 `image_keys`）
+            "image_keys": image_keys,
         }
+
+    def _feishu_fetch_image(self, inc):
+        """把飞书图片取下来落盘。**只在 `feishu-inbound` 线程调用。**
+
+        为什么飞书要单独走这一步（与企微不同）：
+          · 企微回调里带**直链**（可能是密文 + aeskey），内核 `_image_prompt` 自己下；
+          · 飞书回调里**只有 `image_key`**（`{"image_key":"img_v3_…"}`），要拿字节必须
+            调 `im/v1/messages/{message_id}/resources/{file_key}?type=image`，且必须
+            带 tenant token ⇒ 只能由平台层用 SDK 取，内核下不了。
+
+        分工（刻意这样切）：
+          · **平台层**只负责"取到字节并落盘"，一律存 `.bin`；
+          · **内核**负责图像语义（魔数判类型、改成正确扩展名、拼提示语）——
+            这样两边都不用重复一份格式探测表。
+
+        失败写 `inc["image_error"]`，由内核**如实**回给用户，不吞。
+        """
+        key = (inc.get("image_key") or "").strip()
+        mid = (inc.get("dedupe_key") or "").strip()
+        if not key or not mid:
+            inc["image_error"] = "事件里缺 image_key / message_id"
+            log.warning("[feishu][img] 缺字段：image_key=%r message_id=%r", key, mid)
+            return
+        t0 = time.time()
+        try:
+            from lark_oapi.api.im.v1 import GetMessageResourceRequest
+            req = (GetMessageResourceRequest.builder()
+                   .message_id(mid).file_key(key).type("image").build())
+            resp = self.cli.im.v1.message_resource.get(req)
+        except Exception as e:                             # noqa: BLE001
+            inc["image_error"] = "%s: %s" % (type(e).__name__, e)
+            log.warning("[feishu][img] 取图异常：%s", inc["image_error"])
+            return
+        if resp is None or not getattr(resp, "success", lambda: False)():
+            # ⚠️ 飞书的报错**自带"缺哪个 scope + 申请直链"** ⇒ 原样带回去，
+            #    用户点一下就能解决；含糊成"取图失败"反而要人翻文档。
+            inc["image_error"] = "下载被拒：code=%s msg=%s" % (
+                getattr(resp, "code", "?"), getattr(resp, "msg", "?"))
+            log.warning("[feishu][img] %s", inc["image_error"])
+            return
+        body = getattr(resp, "file", None)
+        try:
+            data = body.read() if hasattr(body, "read") else bytes(body or b"")
+        except Exception as e:                             # noqa: BLE001
+            inc["image_error"] = "读响应体失败：%s" % e
+            log.warning("[feishu][img] %s", inc["image_error"])
+            return
+        if not data:
+            inc["image_error"] = "下载回来是空的（0 字节）"
+            log.warning("[feishu][img] %s", inc["image_error"])
+            return
+        day = datetime.now().strftime("%Y%m%d")
+        dest = os.path.join(tempfile.gettempdir(), "feishu-inbox", day)
+        try:
+            os.makedirs(dest, exist_ok=True)
+            # 同一个 image_key → 同一个文件名（重发同一张图不会堆副本）
+            fn = "%s-%s.bin" % (datetime.now().strftime("%H%M%S"),
+                                hashlib.sha1(key.encode("utf-8")).hexdigest()[:8])
+            path = os.path.join(dest, fn)
+            with open(path, "wb") as f:
+                f.write(data)
+        except OSError as e:
+            inc["image_error"] = "落盘失败：%s" % e
+            log.warning("[feishu][img] %s", inc["image_error"])
+            return
+        inc["image_local"] = path
+        inc["image_total"] = len(data)
+        inc["image_ext"] = ""
+        log.info("[feishu][img] 已取到并落盘 %s（%d B，%d ms）",
+                 path, len(data), (time.time() - t0) * 1000)
 
     def _inbound_worker(self):
         """把规范化消息逐条交给内核。
@@ -157,6 +253,18 @@ class FeishuCodecMixin:
             except queue.Empty:
                 continue
             try:
+                # 图片：事件里只有 `image_key`，没有直链 ⇒ 在这里（**不是**事件循环
+                # 线程）用开放平台 API 把字节取下来落盘，再把本地路径交给内核。
+                if inc.get("msgtype") == "image" and not inc.get("image_local"):
+                    # ⚠️ 单独包一层：取图里任何**未预期**异常都要转成 `image_error`，
+                    #    让内核如实回给用户。否则会掉进外层 `except` 只记日志 ——
+                    #    消息既不处理也不回复，用户侧表现是"发出去完全没动静"。
+                    try:
+                        self._feishu_fetch_image(inc)
+                    except Exception as e:                 # noqa: BLE001
+                        inc["image_error"] = "取图时异常：%s: %s" % (
+                            type(e).__name__, e)
+                        log.exception("[feishu][img] 取图未捕获异常，已转为可回显的错误")
                 self.core_handle_incoming(inc)
             except Exception as e:
                 log.exception("[feishu] 处理消息异常：%s", e)

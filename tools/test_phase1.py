@@ -2223,8 +2223,15 @@ def test_image_messages():
         "image_keys": ["aes_key", "media_id"], "dedupe_key": "k1"})
     check("图片没有直链 ⇒ 不入队", b._q.qsize() == n0)
     check("图片没有直链 ⇒ 如实回报字段名",
-          "没有可下载的链接" in captured[-1] and "media_id" in captured[-1],
-          captured[-1][:44])
+          "没有可用的 image_key" in captured[-1]
+          and "media_id" in captured[-1], captured[-1][:60])
+
+    # 平台层给了原因（飞书那种带 scope 的报错）⇒ **原样**回给用户，不再加自己的话
+    b.core_handle_incoming({
+        "userid": "u1", "chatid": "cid", "chat_type": 2, "raw_chatid": "cid",
+        "text": "", "msgtype": "image", "image_url": "", "dedupe_key": "k3",
+        "image_error": "下载被拒：code=99991672 msg=缺 scope im:message:readonly"})
+    check("平台原因原样回给用户", "99991672" in captured[-1], captured[-1][:70])
     b.core_handle_incoming({
         "userid": "u1", "chatid": "cid", "chat_type": 2, "raw_chatid": "cid",
         "text": "", "msgtype": "voice", "dedupe_key": "k2"})

@@ -9,3 +9,8 @@ websocket-client>=1.6
 # 只用来解**加密的图片消息**（AES-256-CBC）。不装它文本照常，
 # 收到图片会明确回「没装 pycryptodome ⇒ 解不了」，不会静默失败。
 pycryptodome>=3.18
+
+# 只有跑**飞书入口**才需要（`PLATFORM=feishu`）。不装的话启动预检直接拒绝启动并说明原因，
+# 企微 / Slack 文本入口一条都不受影响 —— 所以**故意不进上面的必需项**。
+# 装：pip install "lark-oapi>=1.7"（纯 Python 包，无需编译）
+# lark-oapi>=1.7

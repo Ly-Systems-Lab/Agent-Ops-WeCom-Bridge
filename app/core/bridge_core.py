@@ -1279,16 +1279,71 @@ class CoreMixin:
 
         log.info("[img] 已落盘 %s（%d B，%d ms，host=%s）",
                  path, total, (time.time() - t0) * 1000, host)
+        return self._image_file_prompt(path, total, ext, caption), ""
+
+    def _image_file_prompt(self, path, total, ext, caption=""):
+        """把"已经落盘的那张图"写成一段给模型的提示。**两种来源共用**。
+
+        · 企微：回调里带直链（可能是密文）⇒ `_image_prompt()` 自己下载
+        · 飞书：回调里**没有直链**，只有 `image_key` ⇒ 平台层用开放平台 API
+          下载后落盘，再调这里（见平台层的取图实现）
+        """
+        # ⚠️ 提示语**不能写死某个 harness 的工具名**（2026-11-12 取长补短）：
+        #    Claude Code 里读图是 `Read`，DSH 里是 `read_image`，写错工具名会让模型
+        #    白白试错一轮。这里主句只说"你自己的读图工具"，名字降为**例子**。
+        #    而且「能不能真看见」取决于**模型是否声明支持图像输入** ——
+        #    不支持时那个工具会明确报错，所以这里**不承诺**"一定能看清"。
         hint = (f"[用户在聊天里发来一张图片，已存到本机：{path}"
                 f"（{total / 1024:.0f} KB，{ext[1:].upper()}）。"
                 f"请先用你自己的读图工具打开它看清楚，再回应用户"
-                f"（Claude Code 里是 Read）。"
+                f"（不同运行环境里名字不同，例如 `Read` 或 `read_image`）。"
                 f"如果你的运行环境或模型不支持图像输入，那个工具会明确报错 —— 那就如实说"
                 f"「我看不到图片内容」、请用户补充文字描述；不要凭文件名或上下文猜图片内容。"
                 f"如果用户除了图片没写别的，就说明你看到了什么、并问他想让你做什么。]")
         if (caption or "").strip():
             hint += f"\n\n用户附言：{caption.strip()}"
-        return hint, ""
+        return hint
+
+    def _image_local_prompt(self, job, caption=""):
+        """`image_local` 已经落盘的情形：判格式 → 改成正确扩展名 → 拼提示。
+
+        为什么平台层只交"字节"、格式判定留在这里：
+          · 平台层各有各的取图方式（企微直链、飞书 `image_key`），但**格式探测表
+            只该有一份**；
+          · 读图工具按**扩展名**认格式（PNG/JPEG/WebP/GIF），`.bin` 会被当成不支持的
+            类型 ⇒ 必须按魔数改名。
+
+        返回 `(提示文本, "")` 或 `("", 原因)`。
+        """
+        path = job.get("image_local") or ""
+        total = int(job.get("image_total") or 0)
+        if not path or not os.path.isfile(path):
+            return "", job.get("image_error") or "平台层没交来可用的本地图片"
+        try:
+            with open(path, "rb") as f:
+                head = f.read(16)
+        except OSError as e:
+            return "", f"读不了落盘文件：{e}"
+        ext = _image_ext(head)
+        if not ext:
+            return "", "取到的字节不像图片（未知格式）"
+        if not path.lower().endswith(ext):
+            new = path[: -len(".bin")] + ext if path.lower().endswith(".bin") else path + ext
+            try:
+                os.replace(path, new)
+                log.info("[img] 按魔数认定 %s，改名 → %s", ext[1:].upper(), new)
+                path = new
+            except OSError as e:
+                # 改不了名不该让整条消息失败：读图工具认不出扩展名时会报错，
+                # 那句话会被模型如实转达给用户。这里只留痕。
+                log.warning("[img] 改名失败（%s），沿用 %s，扩展名可能让读图工具认不出",
+                            e, path)
+        if total <= 0:
+            try:
+                total = os.path.getsize(path)
+            except OSError:
+                total = 0
+        return self._image_file_prompt(path, total, ext, caption), ""
 
     def _do_job(self, job):
         chatid, chat_type, userid, text = (job["chatid"], job["chat_type"],
@@ -1311,9 +1366,13 @@ class CoreMixin:
         # ⚠️ 必须排在下面的「空消息」早退**之前** —— 图片消息的正文本来就是空的，
         #    放后面就会原样掉进"（空消息，未执行）"（2026-11-12 真机踩到，
         #    日志：`[shape] msgtype=image …` 紧跟着 `正文=''` ⇒ 27B 的空消息回执）。
-        if job.get("image_url"):
-            prompt, why = self._image_prompt(job["image_url"], text, chatid,
-                                             job.get("image_aeskey") or "")
+        if job.get("image_url") or job.get("image_local"):
+            if job.get("image_local"):
+                # 平台层已经用开放平台 API 把图取下来了（飞书没有直链）
+                prompt, why = self._image_local_prompt(job, text)
+            else:
+                prompt, why = self._image_prompt(job["image_url"], text, chatid,
+                                                 job.get("image_aeskey") or "")
             if not prompt:
                 log.warning("[img] 取图失败：%s", why)
                 self._finish(st, chatid, chat_type, f"❌ 图片没能取下来：{why}")
@@ -1529,13 +1588,22 @@ class CoreMixin:
         #    "带附件的文字"交给模型（见 `_image_prompt`）。其余类型仍然如实拒绝。
         msgtype = inc.get("msgtype") or "text"
         image_url = inc.get("image_url") or ""
-        if msgtype == "image" and not image_url:
-            # 拿得到回调、拿不到直链：如实说明，并把字段名带回去（第一张图就是答案）。
-            log.warning("[img] 图片消息里没有可下载的直链，字段=%s", inc.get("image_keys"))
-            self.plat_reply(response_url,
-                            "收到图片，但回调里没有可下载的链接（字段：%s）。"
-                            "把这条日志发我，我按实际字段补上。"
-                            % ("、".join(inc.get("image_keys") or []) or "无"))
+        # 飞书没有直链：平台层已经用开放平台 API 把图下下来落盘了（`image_local`）。
+        image_local = inc.get("image_local") or ""
+        if msgtype == "image" and not image_url and not image_local:
+            # 拿得到回调、拿不到图：**把平台层记下的原因原样带回去**。
+            # ⚠️ 别只写"失败了" —— 飞书的报错里带着缺哪个 scope 和申请直链，
+            #    用户点一下就能解决；含糊掉反而要人去翻文档（2026-11-14 取长补短）。
+            why = inc.get("image_error") or ""
+            keys = inc.get("image_keys") or []
+            if not why:
+                # 平台层没给原因（老分支 / 没实现代取）：把**回调里实际有什么**说清楚。
+                # 只写"失败了"等于让用户去翻文档；字段名是下一轮改代码唯一的线索。
+                why = ("回调里既没有可下载的直链，也没有可用的 image_key"
+                       + ("（实际字段：%s）" % "、".join(keys) if keys else "")
+                       + "；把这条日志发我，我按实际字段补上")
+            log.warning("[img] 图片取不到（原因=%r，字段=%s）", why, keys)
+            self.plat_reply(response_url, "收到图片，但我这边没能取到它：%s" % why)
             return
         if msgtype not in ("text", "image"):
             log.info("[msg] 非文本 msgtype=%s，暂不支持", msgtype)
@@ -1618,6 +1686,11 @@ class CoreMixin:
                # websocket 读线程上执行的，在那儿下载会连心跳和回执一起堵住。
                "image_url": image_url,
                "image_aeskey": inc.get("image_aeskey") or "",
+               # 平台层代取的那一份（飞书没有直链）。有它就走 `_image_local_prompt`。
+               "image_local": image_local,
+               "image_total": inc.get("image_total") or 0,
+               "image_ext": inc.get("image_ext") or "",
+               "image_error": inc.get("image_error") or "",
                "req_id": inc.get("reply_token") or "",
                "response_url": response_url,
                # 入队那一刻的会话代次；跑完落库前要再比一次（见 `_epoch`）

@@ -246,6 +246,82 @@ def default_approval_dir(platform):
     return os.path.join(ROOT, "data", name)
 
 
+# ---------------- 闸门 shim：让 dws / lark-cli 先经过包装器 ----------------
+# 为什么同一个名字要放两个文件：
+#   · bash（Claude Code 的 Bash 工具走这个）只认**裸名**、不看 PATHEXT
+#     ⇒ 必须有一个没有后缀的 `dws`（`#!/bin/sh`）；
+#   · cmd.exe / CreateProcess 只认 PATHEXT 里的后缀 ⇒ 还要一个 `dws.cmd`。
+# 优先级靠**目录顺序**：把本目录垫在 PATH 最前，两边都先命中我们。
+# （所以"往真身同一个目录里塞同名 .cmd"不管用 —— 那里 .exe 排在 .cmd 前面。）
+GATE_SHIM_NAMES = ("dws", "lark-cli")
+
+_GATE_SHIM_SH = """#!/bin/sh
+# 由 tools/install_gate_shims.py / app/common.py 生成，别手改（下次启动会被覆盖）。
+exec "{py}" -X utf8 "{wrap}" --shim-dir "{shim}" -- {name} "$@"
+"""
+
+_GATE_SHIM_CMD = """@echo off
+rem 由 tools/install_gate_shims.py / app/common.py 生成，别手改（下次启动会被覆盖）。
+"{py}" -X utf8 "{wrap}" --shim-dir "{shim}" -- {name} %*
+exit /b %errorlevel%
+"""
+
+
+def gate_shim_dir():
+    """shim 的默认落点。跟着仓走，不进 PATH 之外的任何地方。"""
+    return os.path.join(ROOT, "data", "gate-bin")
+
+
+def console_python(exe=None):
+    """给 shim 用的解释器：**必须是有控制台的那个**。
+
+    ⚠️ 2026-11-15 真机踩到：桥是计划任务用 `pythonw.exe` 起的，shim 里写
+        `sys.executable` ⇒ 每个 shim 都在用**没有控制台**的解释器跑包装器
+        ⇒ stdout/stderr 句柄是空的，`dws --help` 的输出去哪了都不知道，
+        用户侧看到的就是"命令报错 / 这次没有输出"。
+    ⇒ pythonw 一律换成同目录的 python.exe；换不到就退回 PATH 上的 python。
+    """
+    import shutil
+    import sys
+
+    exe = exe or sys.executable
+    name = os.path.basename(exe).lower()
+    if name.startswith("pythonw"):
+        cand = os.path.join(os.path.dirname(exe),
+                            name.replace("pythonw", "python", 1))
+        if os.path.isfile(cand):
+            return cand
+        return shutil.which("python") or exe
+    return exe
+
+
+def write_gate_shims(out_dir=None, python_exe=None, names=GATE_SHIM_NAMES):
+    """生成（覆盖）shim，返回写出的文件清单。幂等：同样输入写同样内容。"""
+    out_dir = out_dir or gate_shim_dir()
+    py = console_python(python_exe)
+    wrap = os.path.join(ROOT, "tools", "gate_wrap.py")
+    os.makedirs(out_dir, exist_ok=True)
+    made = []
+    for name in names:
+        sh_path = os.path.join(out_dir, name)
+        with open(sh_path, "w", encoding="utf-8", newline="\n") as f:
+            # 反斜杠在 sh 里是转义符：给 sh 的路径一律用正斜杠
+            f.write(_GATE_SHIM_SH.format(py=py.replace("\\", "/"),
+                                         wrap=wrap.replace("\\", "/"),
+                                         shim=out_dir.replace("\\", "/"), name=name))
+        made.append(sh_path)
+
+        cmd_path = os.path.join(out_dir, name + ".cmd")
+        with open(cmd_path, "w", encoding="utf-8", newline="\r\n") as f:
+            # `--shim-dir` **必须由 shim 自己带**：包装器据此跳过自己这一层去
+            # PATH 里找真身。只靠环境变量的话，手工垫 PATH 时会解析回 shim 自己
+            # ⇒ 无限递归（2026-11-15 实测：一个 `dws --help` 起了几百层进程）。
+            f.write(_GATE_SHIM_CMD.format(py=py, wrap=wrap,
+                                          shim=out_dir, name=name))
+        made.append(cmd_path)
+    return made
+
+
 def whitelist_gate(allowed, allow_anyone, key="WECOM_ALLOWED_USERIDS",
                    what="userid", anyone_key="WECOM_ALLOW_ANYONE"):
     """启动闸门：白名单为空就**拒绝启动**（fail-closed）。

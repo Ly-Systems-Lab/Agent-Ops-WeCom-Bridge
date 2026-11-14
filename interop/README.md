@@ -116,4 +116,5 @@
 | [钉钉](dingtalk.md) | `dws`：能力面、`--yes` 语义、管理员前置、Windows 缺口 |
 | [飞书](feishu.md) | `lark-cli`：三层命令、`--as user/bot`、官方风险提示 |
 | [Slack](slack.md) | 为什么它暂时只有入口、没有执行面 |
+| [闸门通用入口](gate.md) | `gate_cli.py`（任何 harness 都能指过来）+ `gate_wrap.py`（CLI 自己的包装器）；判定只有一份 |
 | [_template.md](_template.md) | 新平台照这个填 |

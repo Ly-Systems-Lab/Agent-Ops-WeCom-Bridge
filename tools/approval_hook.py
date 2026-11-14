@@ -346,6 +346,80 @@ def _is_cred_path(p, base=""):
     return _is_secret_name(os.path.basename(n))
 
 
+def _cred_sigs():
+    """受保护路径的字面形态。返回 `(普通 sigs, 变量形态 sigs)`。
+
+    为什么要分两组：变量形态（`~` / `$HOME` / `%USERPROFILE%` / `$env:` / MSYS 的
+    `/c/...`）是 `_is_cred_path()` **展不开**的写法；普通 sigs 则是已经展开的
+    绝对路径。**路径字段只能用变量那一半** —— 已经展开的绝对路径该由
+    `_is_cred_path()` 按真实文件系统判，再拿整串 sig 兜一遍就会误伤
+    `~/.dshfoo`（只是名字像）和 `.claude/projects/*/memory/`（我们自己的笔记目录）。
+    """
+    home = os.path.expanduser("~")
+    here = os.path.dirname(os.path.abspath(__file__))
+    sigs, var_sigs = [], []
+    # Git Bash 里 `$HOME` 展开成 `/c/Users/x` —— 这个写法**必须**单独算一条，
+    # 否则 `cat /c/Users/x/.dws/token.json` 从字面上看和受保护目录毫不相干。
+    msys_home = "/" + home.replace(":", "").replace("\\", "/")
+    for name in _HOME_STORES + _HOME_SECRETS:
+        p = os.path.join(home, name)
+        var_sigs += ["~/" + name, "~\\" + name,
+                     "$home/" + name, "$home\\" + name,
+                     "${home}/" + name, "${home}\\" + name,
+                     "%userprofile%/" + name, "%userprofile%\\" + name,
+                     msys_home + "/" + name]
+        # 2026-11-14 补：**PowerShell 的 `$env:` 形态**。
+        # 上面那批覆盖了 `~/`、`$HOME/`、`${HOME}/`、`%USERPROFILE%`、MSYS，
+        # 但 PowerShell 惯用 `$env:USERPROFILE\.lark-cli` —— 字面上**一个 sig 都不匹配**。
+        # 下游实测翻车：模型跑 `Get-ChildItem "$env:USERPROFILE\.lark-cli"` 列凭据目录，
+        # 硬 deny 漏掉 ⇒ 掉到"非白名单命令 ⇒ 弹卡"，用户点了同意才执行。
+        # 那次没读到内容，但**靠的是它只列了目录**，不是靠规则 —— 换成
+        # `Get-Content "$env:USERPROFILE\.lark-cli\config.json"` 就真读到了。
+        # ⇒ 补上这条，别在"凭据边界"上留"靠模型自觉"的口子。
+        for var in ("$env:userprofile", "${env:userprofile}",
+                    "$env:home", "${env:home}",
+                    "$env:appdata", "${env:appdata}"):
+            # 存储名本身**可能带分隔符**（`.config/wecom`）⇒ 两种写法都要给，
+            # 否则 `$env:APPDATA\.config\wecom` 会漏（实测踩到）。
+            for nm in (name, name.replace("/", "\\")):
+                var_sigs += [var + "/" + nm, var + "\\" + nm]
+        sigs += [p, p.replace("/", "\\")]
+    for rel in _REPO_STORES:
+        p = os.path.normpath(os.path.join(here, "..", *rel.split("/")))
+        sigs += [rel, rel.replace("/", "\\"), p, p.replace("/", "\\")]
+    return sigs, var_sigs
+
+
+def _sig_hit(low, sigs):
+    """`sigs` 里有没有一个出现在 `low` 中，且**后面不是路径名的继续**。
+
+    ⚠️ 必须带右边界：`~/.dws` 是 `~/.dws-backup` 的前缀，纯子串匹配会把
+       "名字像"的目录一起判成凭据存储（2026-11-14 自查发现；下游那版没做）。
+       `~/.dws/token.json`、`'.dsh'`、字符串结尾这些边界仍然命中。
+    """
+    for s in sigs:
+        if s and re.search(re.escape(s.lower()) + r"(?![A-Za-z0-9_-])", low):
+            return True
+    return False
+
+
+def _cred_path_text_hit(p):
+    r"""路径字段的**文本兜底**：只认 `_is_cred_path()` 展不开的变量形态。
+
+    起因（2026-11-14）：`Read` 带 `$env:USERPROFILE\.lark-cli\config.json` 时，
+    `_is_cred_path()` 按真实文件系统展开不了 ⇒ 返回 False ⇒ **直接放行**。
+    这是真漏洞，必须补。
+    ⚠️ 但只补这一半：把整串 sig 也拿来兜，实测两处会被误伤 ——
+       `~/.dshfoo\x`（名字像、并非那个目录）和 `.claude/projects/*/memory/`
+       （我们自己的笔记目录，本来有豁免）。
+    """
+    low = (p or "").lower()
+    if not low:
+        return False
+    _sigs, var_sigs = _cred_sigs()
+    return _sig_hit(low, var_sigs)
+
+
 def _cred_text_hit(cmd):
     """命令原文里有没有**直接写出**受保护路径。
 
@@ -356,32 +430,38 @@ def _cred_text_hit(cmd):
        （实测踩到：本功能的提交信息就被自己拦了）。这不是 bug，是上面那条取舍的代价：
        要写含这个路径的文本，走 `Write` 工具或 `git commit -F <文件>`，**别改松这条规则**。
 
-    ⚠️ 抓不到形态：运行时拼出来的路径（`chr(126)+'/.dws'`、先 `cd` 再 `cat token.json`）。
+    ⚠️ 抓不到形态：**运行时才算出来**的路径（`chr(126)+'/.dws'`、先 `cd` 再 `cat token.json`）。
        前者会被"非白名单命令一律弹卡"接住；后者同理。这条**残余风险**写在
        `interop/dingtalk.md` 里，不假装已经封死。
+
+    ✅ 2026-11-14 起**已覆盖** PowerShell 的 `$env:USERPROFILE\\.lark-cli` 形态
+       （此前只认 `~/`、`$HOME/`、`%USERPROFILE%`，漏了 `$env:` —— 下游实测被模型钻过）。
+       ⇒ 现在"列一次凭据目录"就是**硬拒、不出卡**，不再依赖模型自觉。
     """
     low = (cmd or "").lower()
     if not low:
         return False
-    home = os.path.expanduser("~")
-    here = os.path.dirname(os.path.abspath(__file__))
-    sigs = []
-    # Git Bash 里 `$HOME` 展开成 `/c/Users/x` —— 这个写法**必须**单独算一条，
-    # 否则 `cat /c/Users/x/.dws/token.json` 从字面上看和受保护目录毫不相干。
-    msys_home = "/" + home.replace(":", "").replace("\\", "/")
-    for name in _HOME_STORES + _HOME_SECRETS:
-        p = os.path.join(home, name)
-        sigs += ["~/" + name, "~\\" + name,
-                 "$home/" + name, "$home\\" + name,
-                 "${home}/" + name, "${home}\\" + name,
-                 "%userprofile%/" + name, "%userprofile%\\" + name,
-                 msys_home + "/" + name,
-                 p, p.replace("/", "\\")]
-    for rel in _REPO_STORES:
-        p = os.path.normpath(os.path.join(here, "..", *rel.split("/")))
-        sigs += [rel, rel.replace("/", "\\"), p, p.replace("/", "\\")]
-    if any(s.lower() in low for s in sigs):
+    sigs, var_sigs = _cred_sigs()
+    if _sig_hit(low, sigs + var_sigs):
         return True
+    # 2026-11-14 补②：**裸存储名也算命中**（不要求前面带路径根）。
+    # 为什么还要加这一条：上面所有 sig 都要求"路径根 + 分隔符 + 存储名"**连写**，
+    # 而模型会用 `Join-Path $env:USERPROFILE '.lark-cli\config.json'` —— 变量与
+    # 存储名被 ` '` 隔开，字面上没有任何 sig 命中 ⇒ 被**免卡放行**。
+    # 下游实测：`[auto] Bash $p = Join-Path $env:USERPROFILE
+    # '.lark-cli\config.json'; … Test-Path -LiteralPath $p` 就这么过了。
+    # 免卡模式下**没有"弹一张卡"兜底**，硬拒是最后一道 ⇒ 宁可宽一点。
+    # 代价（与本函数一贯取舍一致）：`… | Select-String '\.lark-cli'` 这种
+    # "只是提到名字"的搜索也会被拒。要看这类文本，读文件用 `Read`、
+    # 写文档用 `Write` 的 content（那两者不走这条文本判定）。
+    # ⚠️ 范围刻意只取 `_HOME_STORES`：`.claude` / `.ssh` 在 `_HOME_SECRETS` 里，
+    #    那几个名字更容易在正常命令里偶然出现（`~/.ssh` 除外，它有完整 sig）。
+    # ⚠️ **必须带右边界**（`(?![A-Za-z0-9_-])`）：裸串匹配会把 `~/.dshfoo`、
+    #    `~/.dws-backup` 一起判成凭据存储 —— 那些**不是**存储目录，误伤会让
+    #    "读一个名字相近的普通文件"变成硬拒。下游那版没有边界，我们这版补上。
+    for name in _HOME_STORES:
+        if re.search(re.escape(name.lower()) + r"(?![A-Za-z0-9_-])", low):
+            return True
     return _token_secret_hit(low)
 
 
@@ -413,6 +493,13 @@ def _cred_hit(name, tool_input, cwd):
     for key in _PATH_FIELDS:
         v = tool_input.get(key)
         if isinstance(v, str) and _is_cred_path(v, cwd):
+            return True
+        # 2026-11-14 补：`$env:USERPROFILE\.lark-cli` / `%USERPROFILE%\.dws` 这类
+        # **运行时才展开**的路径，`_is_cred_path()` 展不开（它按真实文件系统解），
+        # 所以再用文本匹配兜一遍 —— 否则 `Read` 工具带这种路径会被**放行**。
+        # ⚠️ 只兜"变量形态"，不拿整串 sig 重判：已展开的绝对路径 `_is_cred_path()`
+        #    判得更准，重判会误伤 `~/.dshfoo` 与 `.claude/projects/*/memory/`。
+        if isinstance(v, str) and _cred_path_text_hit(v):
             return True
     # 命令 / 模式字段：按文本判 —— `Bash` 的 command、`Glob`/`Grep` 的 pattern
     # 都可能直接把存储路径写出来（`Glob ~/.dws/*` 不带 path 字段）。
@@ -510,6 +597,31 @@ def _trusted_cli(tok, prog):
         return os.path.samefile(os.path.abspath(tok.strip("\"'")), real)
     except OSError:
         return False
+
+
+def _via_shim(tok, base, shim_dir):
+    """这个 token 会不会真的落到我们的包装器上？返回 (是/否, 实际解析到哪)。
+
+    ⚠️ **不能用 `shutil.which()` 一把梭**：命令里写的是全路径时，真正执行的是那条路径，
+       PATH 上是什么都不影响。所以：
+        · 带分隔符 ⇒ 就按那条路径判；
+        · 裸名字   ⇒ 才交给 PATH 解析（Windows 上 `.cmd` 排在 PATHEXT 里，目录先于后缀）。
+    这正是"垫一个同名 .cmd 到真 exe 前面"在**同一目录**里不生效的那条事实的用法：
+    我们靠的是**目录顺序**，不是后缀顺序。
+    """
+    p = tok.strip("\"'")
+    if "/" in p or "\\" in p:
+        real = p
+    else:
+        real = shutil.which(base) or ""
+    if not real:
+        return False, ""
+    try:
+        here = os.path.dirname(os.path.normcase(os.path.abspath(real)))
+        want = os.path.normcase(os.path.abspath(shim_dir))
+        return here == want, real
+    except OSError:
+        return False, real
 
 
 def _is_help(args):
@@ -707,8 +819,19 @@ def _segment_ok(text, is_tail):
             return False, "`cd` 的参数不是恰好一个 ⇒ 按写处理"
         return True, ""
     if prog in _PLATFORM_CLIS:
-        if is_tail:
-            return False, "%s 接在管道下端 ⇒ 按写处理" % prog
+        shim = os.environ.get("CC_GATE_SHIM_DIR", "").strip()
+        if shim:
+            # **包装器模式**（桥把 `data/gate-bin` 垫在 PATH 最前时注入）：
+            #   · 解析到我们的 shim ⇒ **让路**。包装器自己会判读写、自己发卡，
+            #     这里再判一次就是同一件事弹两张卡（用户会以为闸门坏了）。
+            #   · 解析到别处（全路径 / 改过 PATH）⇒ **拒绝**。这叫"绕过包装器"，
+            #     而绕过之后没人判读写了 —— 那正是包装器要堵的那条缝。
+            base = prog.rsplit(".", 1)[0]
+            ok, seen_at = _via_shim(toks[0], base, shim)
+            if ok:
+                return True, ""
+            return False, ("%s 没经过闸门包装器（解析到 %s）⇒ 按写处理"
+                           % (base, seen_at or "找不到"))
         if not _trusted_cli(toks[0], prog.rsplit(".", 1)[0]):
             return False, "同名但不是 PATH 上那个 %s（%s）⇒ 按写处理" % (
                 prog.rsplit(".", 1)[0], toks[0])
@@ -799,12 +922,28 @@ def _log_carded(adir, line):
         pass        # 记不了账不影响审批
 
 
+# 最后一句话用哪种**方言**说。
+#   · `claude`（默认）：Claude Code 的 PreToolUse 协议 —— 退出码 0 + 一段 JSON；
+#   · `generic`：给不认识这套协议的 harness —— 放行=退出码 0 且不输出，
+#     拒绝=退出码 2 + `{"permissionDecision":"deny","reason":…}`。
+# **判定逻辑一个字都不变**，变的只有"怎么把结论说出去"（入口见 `tools/gate_cli.py`）。
+DIALECT = "claude"
+
+
 def allow():
     sys.exit(0)
 
 
 def deny(reason):
     """按实测推荐的方式拒绝：JSON，理由**原样**交给模型。"""
+    if DIALECT == "generic":
+        print(json.dumps({"permissionDecision": "deny", "reason": reason},
+                         ensure_ascii=False))
+        sys.exit(2)
+    if DIALECT == "text":
+        # 包装器用：理由走 **stderr**（stdout 是那条命令的，别污染），退出码 126
+        print(reason, file=sys.stderr)
+        sys.exit(126)
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
@@ -882,6 +1021,33 @@ def _run(adir):
             _log_readonly(adir, cmd)
             allow()
 
+    ask_card(name, tool_input, policy,
+             cwd=ev.get("cwd"), session_id=ev.get("session_id"))
+
+
+def ask_card(name, tool_input, policy="", cwd=None, session_id=None,
+             exit_on_allow=True):
+    """发一张审批卡、等用户点：通过 → `allow()`（或返回 True），拒绝 → `deny()`。
+
+    两个调用方共用这一份协议：
+      · `_run()`：harness 的 hook 路径（Claude 的 PreToolUse / `gate_cli`）；
+      · `tools/gate_wrap.py`：包装器路径（谁直接调 `dws` / `lark-cli` 都算）。
+
+    为什么抽出来：卡的形状、超时语义、清理时机只该有一份。两边各写一遍，
+    迟早出现"hook 等 120 秒、包装器等 60 秒"这种没人说得清的分歧。
+
+    ⚠️ 没有 `CC_APPROVAL_DIR` 时**直接拒绝**（fail-closed）：没有卡片能力就没有
+    任何人能授权，此时放行等于闸门不存在。hook 那边"没目录就只做静态过滤"是刻意的
+    降级（它可能被装在一个不需要审批的环境里）；包装器不同 —— 它的存在意义就是发卡。
+
+    `exit_on_allow=False` 给**包装器**用：它批下来之后还要去执行那条命令，
+    `allow()` 那一下 `sys.exit(0)` 会把命令一起带走。hook 那边则必须退出（它的
+    "执行"就是退出码本身）。
+    """
+    adir = os.environ.get("CC_APPROVAL_DIR", "").strip()
+    if not adir:
+        deny("没有配置审批目录（CC_APPROVAL_DIR），发不出审批卡 ⇒ 保守拒绝。")
+
     try:
         deadline = float(os.environ.get("CC_APPROVAL_WAIT_SEC", DEADLINE_SEC))
     except Exception:
@@ -899,7 +1065,7 @@ def _run(adir):
     target = os.environ.get("CC_APPROVAL_TARGET", "").strip()
     body = {
         "id": rid, "tool_name": name, "tool_input": tool_input,
-        "session_id": ev.get("session_id"), "cwd": ev.get("cwd"),
+        "session_id": session_id, "cwd": cwd,
         "target": target, "ts": time.time(),
         "policy": policy,     # 卡面「策略」一行的文案；非 Bash / 没理由时为空串
     }
@@ -950,7 +1116,9 @@ def _run(adir):
             verdict = ""
         if verdict.startswith("allow"):
             _log_carded(adir, "[allow] rid=%s" % rid)
-            allow()
+            if exit_on_allow:
+                allow()
+            return True
         _log_carded(adir, "[deny] rid=%s 用户拒绝" % rid)
         deny("用户点了「拒绝」，这条工具调用没有执行。")
     except SystemExit:
