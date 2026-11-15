@@ -248,7 +248,8 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
 ## 🧰 它现在能做什么
 
 **群聊 + 私聊都通**；流式气泡、模板卡片、审批卡片都已**真机验收**；
-[`tools/test_phase1.py`](tools/test_phase1.py) 里 339 项检查（含会真调一次模型的那几项）全过 —— 你可以自己复跑。
+[`tools/test_phase1.py`](tools/test_phase1.py) 里 339 项检查（含会真调一次模型的那几项）全过；
+另有 10 个专项套件（闸门 / 平台切换 / 模型 / 分片 …）同批全绿 —— 都可以自己复跑。
 
 | 能力 | 说明 |
 |---|---|
@@ -346,9 +347,11 @@ cp .env.example .env              # 填 Bot ID/Secret、你自己的 userid、AN
   Agent 会 Bash 就能用 —— 包装只会让我们替官方背升级。
 - **直接用官方 CLI**：零适配层，升级跟着官方走，坏了拆掉即可。
 
-⚠️ **身份要说清楚**：`dws` / `lark-cli` 用的是**你本人的 OAuth**。
-Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机器人**。
-这是"借力"的代价，也是它的价值 —— 所以写操作上，闸门必须做实。
+⚠️ **身份要说清楚**：`dws` / `lark-cli` **默认用你本人的 OAuth**，企微的 `message aibot …`
+用的是**机器人**；三家都能切（`--identity bot` / `--as bot` / 换凭据目录）。
+Agent 发出去的一条消息，同事看到的是你还是机器人，取决于那一刻用的是哪一种 ——
+这是"借力"的代价，也是它的价值。**所以卡面必须写清身份、写操作上闸门必须做实。**
+四种组合的差异与前置：[`interop/`](interop/README.md)。
 
 </details>
 
@@ -457,7 +460,7 @@ Agent 在钉钉里发的一条消息，**同事看到的是你发的，不是机
 
 | 路径 | 内容 |
 |---|---|
-| [`app/bridge.py`](app/bridge.py) | 桥本体（单文件） |
+| [`app/bridge.py`](app/bridge.py) | 入口与装配（按 `PLATFORM` 选适配器）—— 内核在 [`app/core/`](app/core/)，各平台的实现在 [`app/platforms/`](app/platforms/) |
 | [`tools/approval_hook.py`](tools/approval_hook.py) | 审批卡片的 `PreToolUse` hook（独立进程，**否决权在这里**） |
 | [`tools/verify_headless.py`](tools/verify_headless.py) | 首次自检①：依赖 + 认证 + headless 行为矩阵（会真调一次模型） |
 | [`tools/env_from_settings.py`](tools/env_from_settings.py) | 把 `~/.claude/settings.json` 里 `ANTHROPIC*` 搬到 `.env`（只打键名和长度，不回显 token） |
