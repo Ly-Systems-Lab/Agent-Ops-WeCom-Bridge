@@ -1,0 +1,860 @@
+{
+  "cli": "wecom-cli",
+  "source": "wecom-cli schema list（运行时自省，非技能文档）",
+  "read_rule": "只有 tools/wecom_effect_sync.py 的 READ 白名单算读，其余按写",
+  "local_write": {
+    "message.files.get": "把媒体内容下载到本地（落盘路径由官方 CLI 决定）"
+  },
+  "commands": {
+    "auth.init": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "auth.show": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "calendar.schedules.cancel": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "calendar.schedules.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "calendar.schedules.free.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "calendar.schedules.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "calendar.schedules.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "calendar.schedules.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "calendar.schedules.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "chat.groups.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "chat.messages.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "contact.users.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "disk.files.download": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "disk.files.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "disk.files.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "disk.files.rename": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "disk.files.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "disk.files.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "disk.folders.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.contents.append": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.contents.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "doc.contents.overwrite": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.import": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.members.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.names.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.rules.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "doc.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "identity.whoami": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "mail.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "mail.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "mail.send": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "media.download": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "media.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "meeting.cancel": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "meeting.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "meeting.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "meeting.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "meeting.original.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "meeting.rooms.buildings.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "meeting.rooms.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "meeting.search": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "meeting.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "message.aibot.send": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "message.aibot.sessions.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "message.files.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "message.send": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.autotab.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.autotab.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.border.clear": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.border.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cells.append": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cells.batchset": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cells.find": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.cells.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.cells.replace": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cells.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cf.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cf.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.cf.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.cf.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.contents.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.dims.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.dims.insert": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.dims.move": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.dims.resize": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.dims.visible": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.filter.clear": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.filter.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.filter.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.filter.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.float.image.batchset": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.float.image.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.float.image.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.float.image.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.float.image.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.formulas.calculate": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.images.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.images.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.import": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.info.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.merge.clear": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.merge.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.merge.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.protects.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.protects.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.protects.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.protects.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.ranges.autofill": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.ranges.clear": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.ranges.copy": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.ranges.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.ranges.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.ranges.insert": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.ranges.sort": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.rows.append": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.style.clear": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.style.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.copy": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.move": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.remove": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.rename": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.subsheets.visible": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.table.style.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.table.style.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.table.style.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.table.style.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.validation.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.validation.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.validation.set": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.validation.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.version.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.version.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "sheet.version.rollback": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "sheet.workbook.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "slide.designs.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "slide.designs.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "slide.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "slide.images.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "slide.pages.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "slide.pages.addjsx": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "slide.pages.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "slide.pages.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartpage.blocks.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.databases.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartpage.files.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.images.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.import": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.pages.append": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.pages.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartpage.pages.overwrite": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartpage.pages.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.charts.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.charts.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.charts.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartsheet.charts.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.fields.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.fields.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.fields.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartsheet.fields.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.files.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartsheet.images.upload": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.import": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.records.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.records.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.records.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartsheet.records.query": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.records.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.sheets.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.sheets.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.sheets.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartsheet.sheets.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.views.add": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.views.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "smartsheet.views.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "smartsheet.views.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "todo.create": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "todo.delete": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "todo.finish": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    },
+    "todo.get": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "todo.list": {
+      "effect": "read",
+      "confirmation": "not_required",
+      "dry_run": true
+    },
+    "todo.update": {
+      "effect": "write",
+      "confirmation": "required",
+      "dry_run": true
+    }
+  }
+}

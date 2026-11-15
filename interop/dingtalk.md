@@ -242,7 +242,43 @@ Agent 真正会用到的就这几条：
 
 ## 4. 执行身份
 
-**用户 OAuth —— 也就是你本人。** 同事收到的消息是你发的，不是你授权的机器人发的。
+**默认是用户 OAuth —— 也就是你本人**（`--identity user`，也是默认值）。
+**同一个 CLI 还支持机器人身份**：`--identity bot --robot-code <code>`
+（`--as` 是官方给的 lark-cli 对齐别名），第三种是 `webhook`。
+三者的能力矩阵见 [`interop/README.md` §身份矩阵](README.md#身份矩阵同一件事两种身份)。
+
+| 身份 | 怎么写 | 前置 | 硬限制 |
+|---|---|---|---|
+| user（默认） | `--identity user` | 管理员开 CLI 访问 | 可内联本地图片 |
+| **bot** | `--identity bot --robot-code <code>` | 要有机器人的 robot-code | **不支持本地图片**；可多群批量（≤100）；逐项返回 ledger |
+| webhook | `--identity webhook --webhook-token` | 群自定义机器人 | 只走 webhook |
+
+⚠️ **钉钉的机器人不是"桥里的那只"** —— 它是钉钉工作区里的一个机器人。
+本机的 `robotCode` 用 `dws chat bot search` 就能查到（只列你自己创建的机器人）。
+
+✅ **bot 群发已实测（2026-11-15）**。完整三步，全部是官方命令：
+
+```bash
+# ① 机器人必须先在群里（CC 的应用与机器人本来就有，只是没进过群）
+dws chat group members add-bot --id <openConversationId> --robot-code <robotCode>
+#    可逆：dws chat group members remove-bot …
+# ② 以机器人身份群发
+dws chat +messages-send --identity bot --robot-code <robotCode> \
+    --group <openConversationId> --text "…" --yes
+# ③ 回读：sender 应该是机器人，不是你的账号
+dws chat +chat-messages --group <openConversationId> --limit 3
+```
+
+实测结果：`ok:true`、`tool=send_robot_group_message`；回读的 `sender = CC`
+（与本人的 senderId 不同），用户当场在群里回了一条确认。
+
+⚠️ 两个仍要记住的点：
+
+1. **单聊路径仍然报参数错**：`--as bot --robot-code … --open-dingtalk-ids <openDingTalkId>`
+   被后端判 `PARAM_ERROR / userIds 缺失`。看起来是 CLI 传的 `openDingtalkIds` 与后端要的
+   `userIds` 不是同一个字段 ⇒ 单聊要么等 CLI 修，要么先走群发。
+2. **非交互环境必须加 `--yes`**：Agent / CI 里不加会回 `confirmation_required`（code 3），
+   和"命令有问题"长得不一样。⚠️ `--yes` **不改变我们的闸门判定** —— 写命令照样弹卡。
 
 前置：企业管理员在**开发者平台 → CLI 访问管理**里开启。
 ✅ 实测走过一次完整流程：`dws auth login` → 浏览器提示"该组织尚未开启 CLI 数据访问权限"
@@ -252,10 +288,13 @@ Agent 真正会用到的就这几条：
 
 ```
 身份：钉钉 · 你的账号（不是机器人）
+身份：钉钉 · 机器人身份（应用自己的身份）      ← 带 --identity bot / --as bot
+身份：钉钉 · Webhook 机器人                    ← 带 --identity webhook
 ```
 
-判定只看命令的**第一个词**（`dws` / `dws.cmd` / `lark-cli`），
-`echo dws` 不算、`cd x && dws …` 算。它**只影响显示，不影响放行**。
+平台判定只看每段的**第一个词**（`dws` / `dws.cmd` / `lark-cli`），
+`echo dws` 不算、`cd x && dws …` 算；身份开关**按段**看（后一段的 `--as bot`
+不会算到前一段头上）。它**只影响显示，不影响放行**。
 
 ## 5. 安装前置
 

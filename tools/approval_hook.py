@@ -74,11 +74,16 @@ SEEN_WAIT_SEC = 10          # 等桥"我看到了"的上限：桥没在跑就别
 #    有个词拿不准 —— 一律弹卡，绝不"猜它是读"。
 # ============================================================
 
-# 执行面 CLI（basename，小写）。两个都有官方风险表：
+# 执行面 CLI（basename，小写）。三张表：
 #   dws      → interop/dws_effects.json      （`dws schema --all --compact`）
 #   lark-cli → interop/lark_effects.json     （`lark-cli schema` + 每条 --help 的 Risk 行）
+#   wecom-cli→ interop/wecom_effects.json    （官方 schema 无风险字段 ⇒ 我们自己标，默认按写）
+# `wecom-bot` 是本仓加的**身份选择器**：同一个官方 CLI，换一份凭据目录
+# （`data/wecom-cli-cc/`）⇒ 以本桥的机器人身份执行。判定与 wecom-cli 完全同一套。
 _PLATFORM_CLIS = {"dws", "dws.exe", "dws.cmd",
-                  "lark-cli", "lark-cli.exe", "lark-cli.cmd"}
+                  "lark-cli", "lark-cli.exe", "lark-cli.cmd",
+                  "wecom-cli", "wecom-cli.exe", "wecom-cli.cmd",
+                  "wecom-bot", "wecom-bot.exe", "wecom-bot.cmd"}
 
 # 不联网、不改数据、只打印本地帮助的子命令
 _LOCAL_SUBCOMMANDS = {"help", "schema", "version"}
@@ -202,6 +207,12 @@ _READ_WRITES_LOCAL = {
         "whiteboard export":         ("--output", "把白板导出到 --output 目录"),
         "whiteboard export-get":     ("--output", "把白板导出结果下载到 --output 目录"),
     },
+    "wecom-cli": {
+        # 官方 schema 只有入参/出参，**没有** effect 字段（2026-11-15 实测）⇒
+        # "哪些算读"由 `tools/wecom_effect_sync.py` 的白名单决定，其余一律按写。
+        # 这里只记"官方标读、但一定会落盘"的那几条（与快照里的 local_write 同源）。
+        "message.files.get": (None, "把媒体内容下载到本地（落盘路径由官方 CLI 决定）"),
+    },
 }
 
 # 命令替换与重定向：出现任何一个，这条命令就不再是"纯读"。
@@ -227,6 +238,9 @@ _EFFECT_PATHS = {
                         "..", "interop", "dws_effects.json"),
     "lark-cli": os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "..", "interop", "lark_effects.json"),
+    # `wecom-cli` 官方 schema 没有风险字段 ⇒ 这张是我们自己标的（默认按写）
+    "wecom-cli": os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "interop", "wecom_effects.json"),
 }
 
 
@@ -676,9 +690,9 @@ def _local_write_hit(cli, matched, args):
 
 
 def _cli_ok(prog, args):
-    """`dws` / `lark-cli` 这一段是不是只读。"""
-    # `dws.cmd` / `dws.exe` 是同一个东西的另外两种后缀 —— 归一后再查表
-    for name in ("dws", "lark-cli"):
+    """执行面 CLI（`dws` / `lark-cli` / `wecom-cli` / `wecom-bot`）这一段是不是只读。"""
+    # `xxx.cmd` / `xxx.exe` 是同一个东西的另外两种后缀 —— 归一后再查表
+    for name in ("dws", "lark-cli", "wecom-cli", "wecom-bot"):
         if prog in (name + ".exe", name + ".cmd"):
             prog = name
             break
@@ -687,9 +701,23 @@ def _cli_ok(prog, args):
         return True, ""
     if prog == "lark-cli":
         return _lark_ok(args)
+    if prog in ("wecom-cli", "wecom-bot"):
+        # 官方 CLI 的调用形状是 `svc sub [sub]`，方法名是点分（`message.aibot.send`）
+        return _table_ok(args, "wecom-cli", prog, sep=".")
+    return _table_ok(args, "dws", prog, sep=" ")
+
+
+def _table_ok(args, cli, prog, sep=" "):
+    """按 `<cli>_effects.json` 这张快照判读写（dws / wecom-cli 共用）。
+
+    `sep` 是**命令路径的拼接符**：`dws` 用空格（`doc +read`），
+    `wecom-cli` 用点（`message.aibot.send`）。
+    """
     if not args:
         return False, "只写了 %s、没有子命令 ⇒ 按写处理" % prog
     if args[0].startswith("-"):
+        if args[0] in ("-V", "--version"):
+            return True, ""
         return False, "全局参数写在子命令之前，定位不到命令 ⇒ 按写处理"
 
     parts = []
@@ -700,17 +728,17 @@ def _cli_ok(prog, args):
     if parts and parts[0] in _LOCAL_SUBCOMMANDS:
         return True, ""
 
-    table = _load_effects()
+    table = _load_effects(cli)
     entry, matched = None, ""
     # **最长前缀匹配**：`dws doc +read <docId>` 里 `<docId>` 是位置参数，
     # 不能把它当成命令路径的一部分 —— 所以从长到短试，命中哪条算哪条。
     for n in range(min(len(parts), 5), 0, -1):
-        key = " ".join(parts[:n])
+        key = sep.join(parts[:n])
         if key in table:
             entry, matched = table[key], key
             break
     if entry is None:
-        shown = " ".join(parts[:3]) + (" …" if len(parts) > 3 else "")
+        shown = sep.join(parts[:3]) + (" …" if len(parts) > 3 else "")
         return False, "表外按写（%s）" % shown
 
     eff = str(entry.get("effect") or "")
@@ -731,7 +759,9 @@ def _cli_ok(prog, args):
     sensitive = _SENSITIVE_READ.get(matched)
     if sensitive:
         return False, "会读出密钥：%s（%s）" % (sensitive, matched)
-    hit = _local_write_hit(prog, matched, args)
+    # ⚠️ 用 **cli 表名**查（不是调用名）：`wecom-bot` 是 `wecom-cli` 的别名，
+    #    落盘表只存了一份，两边必须查到同一张。
+    hit = _local_write_hit(cli, matched, args)
     if hit:
         return False, hit
     return True, ""

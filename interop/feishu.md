@@ -67,6 +67,14 @@ lark-cli im +messages-send --as bot --chat-id "oc_xxx" --text "Hello"
 `--as` 显示：用户身份写「飞书 · 你的账号（不是机器人）」，`--as bot` 写
 「飞书 · 机器人身份（应用自己的身份）」。默认（不带 `--as`）按 `auto` 走，卡面写用户身份。
 
+⚠️ 这里的机器人是 **`lark-cli` 绑定的专用应用**，不是桥自己的飞书应用 ——
+三个平台的"机器人身份"各是各的，矩阵见
+[`interop/README.md` §身份矩阵](README.md#身份矩阵同一件事两种身份)。
+
+✅ **2026-11-15 真机实测**：`lark-cli im +messages-send --as bot --user-id <你的 open_id>
+--text …` → `ok:true, identity:bot`，返回 `message_id`。注意这只 bot 当时**不在任何群里**
+（`+chat-list --as bot` 为空），所以走的是**单聊**；进群后群发同样可用。
+
 ## 5. 凭据存储（实测路径）
 
 | 东西 | 位置 |

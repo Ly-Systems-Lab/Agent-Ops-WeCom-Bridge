@@ -31,11 +31,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "app"))
 
-from common import GATE_SHIM_NAMES, gate_shim_dir, write_gate_shims   # noqa: E402
+from common import (GATE_SHIM_NAMES, GATE_SHIM_OWNED, gate_shim_dir,   # noqa: E402
+                    write_gate_shims)
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="生成 dws / lark-cli 的 PATH shim")
+    ap = argparse.ArgumentParser(description="生成执行面 CLI 的 PATH shim")
     ap.add_argument("--dir", default=gate_shim_dir(),
                     help="输出目录（默认 data/gate-bin）")
     ap.add_argument("--only", default="", help="只做这些名字，逗号分隔")
@@ -52,12 +53,13 @@ def main(argv=None):
     print("已生成 %d 个文件：" % len(made))
     for p in made:
         print("  " + p)
-    print("\n把下面这个目录垫在 PATH 最前面，`dws` / `lark-cli` 才会经过包装器：")
+    print("\n把下面这个目录垫在 PATH 最前面，这些 CLI 才会经过包装器：")
     print("  " + os.path.abspath(args.dir))
     for n in names:
-        if not shutil.which(n):
-            print("⚠️ PATH 上找不到 %s 的本体 —— 包装器会报「找不到本体」并退出 127"
-                  "（先装上它再用）" % n, file=sys.stderr)
+        if n in GATE_SHIM_OWNED or shutil.which(n):
+            continue
+        print("⚠️ PATH 上找不到 %s 的本体 —— 包装器会报「找不到本体」并退出 127"
+              "（先装上它再用）" % n, file=sys.stderr)
     return 0
 
 

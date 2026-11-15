@@ -240,6 +240,40 @@ def test_exec_identity():
     # 那样会把正确结果判成失败（我第一版就这么写的）。
     check("--as user ⇒ 仍是你的账号",
           "你的账号" in got and "机器人身份" not in got, got)
+
+    # 钉钉：`--identity user|bot|webhook`（`--as` 是官方给的别名）
+    got = line("dws chat +messages-send --identity bot --robot-code r --group g --text hi")
+    check("钉钉 --identity bot ⇒ 机器人身份", "机器人身份" in got, got)
+    got = line("dws chat +messages-send --as bot --robot-code r --group g --text hi")
+    check("钉钉 --as bot（别名）也认", "机器人身份" in got, got)
+    got = line("dws chat +messages-send --identity=user --group g --text hi")
+    check("钉钉 --identity=user ⇒ 你的账号",
+          "你的账号" in got and "机器人身份" not in got, got)
+    got = line("dws chat +messages-send --identity webhook --webhook-token t --text hi")
+    check("钉钉 webhook ⇒ 写 Webhook 机器人", "Webhook" in got, got)
+
+    # 企业微信：身份由**方法**决定，不是开关
+    got = line("wecom-cli message aibot send --chat-id x --msg-type markdown --markdown {}")
+    check("企微 message aibot ⇒ 机器人身份（CC）",
+          "机器人身份" in got and "CC" in got, got)
+    got = line("wecom-bot message aibot sessions list")
+    check("wecom-bot ⇒ 机器人身份（CC）", "机器人身份" in got, got)
+    got = line("wecom-cli message send --user-id u --text hi")
+    check("企微 message send ⇒ 你的账号",
+          "你的账号" in got and "机器人身份" not in got, got)
+    got = line("wecom-cli todo create --title t")
+    check("企微其它方法 ⇒ 机器人代真人执行", "代真人执行" in got, got)
+    got = line("wecom-bot message send --user-id u --text hi")
+    check("wecom-bot + message send ⇒ 仍按方法算真人", "你的账号" in got, got)
+
+    # ⚠️ 身份必须**按段**判：后一段的 `--as bot` 不能漏到前一段头上
+    got = line("dws todo +list && lark-cli im +messages-send --as bot --text hi")
+    check("多段命令：钉钉那段没带开关 ⇒ 仍是你的账号",
+          "钉钉" in got and "你的账号" in got, got)
+    got = line("lark-cli im +messages-send --as bot --text hi && dws todo +list")
+    check("多段命令：飞书那段带 bot ⇒ 机器人身份",
+          "飞书" in got and "机器人身份" in got, got)
+
     check("非 Bash 工具不显示这一行",
           ei.describe({"tool_name": "Read", "tool_input": {}}) == "")
     check("普通命令不显示这一行", line("ls -la") == "")

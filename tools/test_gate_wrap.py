@@ -29,6 +29,7 @@ sys.path.insert(0, TOOLS)
 sys.path.insert(0, os.path.join(ROOT, "app"))
 
 import approval_hook as gate                      # noqa: E402
+import gate_wrap                                  # noqa: E402
 from common import write_gate_shims               # noqa: E402
 
 OK = True
@@ -73,6 +74,35 @@ def test_shims():
         body2 = f.read()
     check("pythonw 自动换成 python.exe（否则输出全丢）",
           "pythonw" not in body2 and "python.exe" in body2, body2.splitlines()[2][:70])
+
+    # `wecom-bot` 是本仓提供的身份选择器（不依赖 PATH 上装没装）——
+    # shim 模板必须对它同样成立，否则这个"手"只存在于桥的子进程里。
+    d3 = tempfile.mkdtemp(prefix="shim-wecom-")
+    made3 = write_gate_shims(d3, names=("wecom-bot",))
+    check("wecom-bot 也生成两个形态（裸名 + .cmd）", len(made3) == 2, str(len(made3)))
+    with open(os.path.join(d3, "wecom-bot"), encoding="utf-8") as f:
+        body3 = f.read()
+    check("…shim 把 wecom-bot 这个名字传下去（由包装器换身份）",
+          "-- wecom-bot " in body3, body3.splitlines()[-1][:70])
+
+    # npm 的 `.cmd` 是壳：真身在包里。**必须优先用原生 exe** ——
+    # 走 cmd.exe 时参数里的 `>` 会被当成重定向（发 markdown 一个 `> 引用` 就炸）。
+    d4 = tempfile.mkdtemp(prefix="npm-shell-")
+    pkg = os.path.join(d4, "node_modules", "demo-cli")
+    os.makedirs(os.path.join(pkg, "bin"))
+    os.makedirs(os.path.join(pkg, "vendor"))
+    open(os.path.join(pkg, "package.json"), "w").close()
+    open(os.path.join(pkg, "bin", "demo.js"), "w").close()
+    exe = os.path.join(pkg, "vendor", "demo.exe")
+    open(exe, "w").close()
+    cmd = os.path.join(d4, "demo.cmd")
+    with open(cmd, "w", encoding="utf-8") as f:
+        f.write('"%dp0%\\node_modules\\demo-cli\\bin\\demo.js" %*\r\n')
+    native = gate_wrap._prefer_native(cmd, "demo")
+    check("能从 npm 壳里找到包里那个原生 exe",
+          os.path.normcase(native) == os.path.normcase(exe), native)
+    check("包里没有 exe 时退回空串（照旧用 .cmd）",
+          gate_wrap._prefer_native(cmd, "nope") == "")
 
 
 # ---------------- ②③ 包装器本体 ----------------

@@ -55,7 +55,8 @@ import websocket  # websocket-client
 # 兼容旧调用：`bridge.XXX` 在测试与 tools/probe_hooks.py 里被直接引用。
 from common import (  # noqa: F401  （常量与配置）
     APPROVAL_POLL_SEC, BACKOFF_MAX, BACKOFF_START, DEFAULT_DB,
-    DEFAULT_DISALLOWED, DEFAULT_PERM_MODE, ENV, GATE_SHIM_NAMES, HEARTBEAT_SEC,
+    DEFAULT_DISALLOWED, DEFAULT_PERM_MODE, ENV, GATE_SHIM_NAMES, GATE_SHIM_OWNED,
+    HEARTBEAT_SEC,
     ID_FIELDS, LOGDIR, LOG_KEEP_DAYS, MUTEX_NAME, PROGRESS_HEARTBEAT_SEC,
     PROGRESS_RAW_CAP, ROOT, SEEN_KEEP_DAYS, SEND_WAIT_SEC, STALE_RX_SEC,
     STREAM_LATCH_SEC, STREAM_LIMIT, STREAM_MAX_SEC, TASK_NAME, WATCHDOG_SEC,
@@ -627,7 +628,10 @@ def main():
         try:
             # 只为**装了的** CLI 生成 shim：没装的话让 shell 照常报 command not found，
             # 不要凭空造出一个"存在但跑不动"的命令。
-            names = tuple(n for n in GATE_SHIM_NAMES if shutil.which(n))
+            # 例外是 `GATE_SHIM_OWNED`（`wecom-bot`）：它本来就由本仓提供，
+            # 不生成就等于"这个手只存在于桥里"。
+            names = tuple(n for n in GATE_SHIM_NAMES
+                          if n in GATE_SHIM_OWNED or shutil.which(n))
             if names:
                 write_gate_shims(names=names)
                 shim_dir = gate_shim_dir()
@@ -636,7 +640,7 @@ def main():
                 log.info("[gate] 包装器已挂上：%s（%s 会先经过闸门）",
                          shim_dir, " / ".join(names))
             else:
-                log.info("[gate] PATH 上没有 dws / lark-cli，跳过包装器")
+                log.info("[gate] 没有任何可包装的执行面 CLI，跳过包装器")
         except Exception as e:                       # noqa: BLE001
             # 生成不了就**不垫 PATH**（回到老行为），但要说出来 ——
             # 静默失败会让人以为闸门挂着，其实一条命令都没经过它。

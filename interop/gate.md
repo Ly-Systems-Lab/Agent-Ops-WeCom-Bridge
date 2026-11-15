@@ -90,7 +90,17 @@ data/gate-bin/dws.cmd      ← 后缀 shim（cmd.exe 只认这个）
                  └─ 没有 CC_APPROVAL_DIR → **拒绝**（126，理由在 stderr）
 ```
 
-桥启动时生成这两个文件、把目录垫进 harness 的 PATH 最前，并注入
+当前包的四个名字：`dws`、`lark-cli`、`wecom-cli`、`wecom-bot`。
+其中 **`wecom-bot` 不是另一个二进制**，而是"同一个官方 CLI + 另一份凭据目录"
+（`data/wecom-cli-cc/`）—— 它由本仓提供，所以 shim **总是生成**（`GATE_SHIM_OWNED`），
+不依赖 PATH 上装没装。判定仍用 `wecom-cli` 那张表。
+
+🧩 **真身优先用原生 exe，不用 npm 的 `.cmd`**：`.cmd` 要经过 `cmd.exe`，参数里的
+`>` / `|` / `&` 会被当成重定向/管道 —— 发一条带 `> 引用` 的 markdown 就报
+「系统找不到指定的路径」（2026-11-15 实测）。包装器会顺着 `.cmd` 找到包里的
+同名 `.exe`（三个 CLI 都带）。
+
+桥启动时生成这些文件、把目录垫进 harness 的 PATH 最前，并注入
 `CC_GATE_SHIM_DIR`。**hook 靠它分工**：
 
 | 命令 | hook 怎么办 | 为什么 |
@@ -117,5 +127,6 @@ data/gate-bin/dws.cmd      ← 后缀 shim（cmd.exe 只认这个）
 | 入参归一 / 工具名映射 / 两种方言 | ✅ 离线单测 24 项（`tools/test_gate_cli.py`） |
 | 凭据硬 deny / 免卡 / 弹卡等待 / 桥不在就拒 | ✅ 同上（判定复用 `approval_hook.py`，非另写一份） |
 | 在 DSH 上改指本入口 | ⏳ **未接线实测** —— DSH 目前仍走它自己的 `pre-execute` |
-| shim 生成 / 包装器判读写 / 拒绝时不执行 / 让路与反绕过 | ✅ 离线单测 31 项（`tools/test_gate_wrap.py`）+ 手工端到端 `dws --help` |
+| shim 生成 / 包装器判读写 / 拒绝时不执行 / 让路与反绕过 | ✅ 离线单测 33 项（`tools/test_gate_wrap.py`）+ 手工端到端 `dws --help` |
+| `wecom-cli` / `wecom-bot` 的读写表与身份选择 | ✅ 单测 33 项（`tools/test_wecom_gate.py`）；真机 `sessions list` 直放、`aibot send` 无审批目录时 126 |
 | 桥注入 PATH 后的**真机一轮**（读直跑、写弹卡） | ⏳ 待重启后实测 |

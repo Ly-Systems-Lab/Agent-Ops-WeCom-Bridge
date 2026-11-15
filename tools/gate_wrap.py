@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`dws` / `lark-cli` 的**包装器**：让执行面自己持有闸门。
+"""`dws` / `lark-cli` / `wecom-cli` / `wecom-bot` 的**包装器**：让执行面自己持有闸门。
 
 为什么要有它
     hook 只在"harness 愿意调它"时生效。谁绕过 harness 直接敲 `dws chat +send`，
@@ -25,21 +25,33 @@
 """
 
 import os
+import re
 import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import approval_hook as gate                      # noqa: E402
 
-# 只包这两个执行面；名字里带不带后缀都认（shim 传的是裸名）
-KNOWN = ("dws", "lark-cli")
+# 只包这几个执行面；名字里带不带后缀都认（shim 传的是裸名）
+KNOWN = ("dws", "lark-cli", "wecom-cli", "wecom-bot")
+
+# `wecom-bot` 不是另一个二进制，而是**同一个官方 CLI + 另一份凭据目录**：
+# 仓库在 2026-10-29 就为 CC 单独建了 `data/wecom-cli-cc/`（DECISIONS §21.10），
+# 不重造参数校验/脱敏/分页，只换身份。判定仍走 `wecom-cli` 那张快照。
+# ⚠️ 调用方**显式设了** `WECOM_CLI_CONFIG_DIR` 就不覆盖 —— 那是"我要用另一份凭据"。
+LAUNCHERS = {
+    "wecom-bot": ("wecom-cli",
+                  {"WECOM_CLI_CONFIG_DIR": os.path.join(ROOT, "data", "wecom-cli-cc")},
+                  "wecom-cli"),
+}
 
 
 def _usage():
-    print("用法：gate_wrap.py -- <dws|lark-cli> <参数…>", file=sys.stderr)
+    print("用法：gate_wrap.py -- <%s> <参数…>" % "|".join(KNOWN), file=sys.stderr)
     return 2
 
 
@@ -68,11 +80,58 @@ def _base(prog):
     return p
 
 
+def _prefer_native(cmd_path, base):
+    """npm 的 `.cmd` 只是壳：同一个包里通常还带着**原生 exe**，优先用它。
+
+    🚨 为什么必须优先（2026-11-15 实测）：`.cmd` 要经过 `cmd.exe`，参数里的
+    `>` / `|` / `&` 会被当成重定向/管道。发 markdown 时正文里一个 `> 引用`
+    就让整条命令报「系统找不到指定的路径」，而且**退出码 1、看起来像网络问题**。
+
+    做法：读 `.cmd` 拿到它要跑的 `.js` 入口 → 往上找到包根（有 `package.json`
+    的那一层）→ 在包里找同名 `.exe`。找不到就返回空串，照旧用 `.cmd`。
+    """
+    try:
+        with open(cmd_path, encoding="utf-8", errors="replace") as f:
+            body = f.read()
+    except OSError:
+        return ""
+    m = re.search(r'"([^"]+\.js)"', body)
+    if not m:
+        return ""
+    # 用函数替换：Windows 路径里的 `\U` 会被 re 当成转义序列（实测踩到）
+    js = re.sub(r"%[~]*dp0%", lambda _m: os.path.dirname(cmd_path),
+                m.group(1), flags=re.I)
+    js = os.path.normpath(js.replace("\\", os.sep))
+    d = os.path.dirname(js)
+    pkg = ""
+    for _ in range(4):
+        if os.path.isfile(os.path.join(d, "package.json")):
+            pkg = d
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    if not pkg:
+        return ""
+    want = (base + ".exe").lower()
+    for root_dir, dirs, files in os.walk(pkg):
+        rel = os.path.relpath(root_dir, pkg)
+        if rel != "." and rel.count(os.sep) >= 4:
+            dirs[:] = []                     # 别把整棵 node_modules 都走一遍
+            continue
+        for f in files:
+            if f.lower() == want:
+                return os.path.join(root_dir, f)
+    return ""
+
+
 def _real_bin(base, shim_dir):
     """真身在哪。`GATE_REAL_BIN` 优先（v2 改名后靠它指回去）。
 
     否则在 PATH 里找，**跳过 shim 目录**（那里面是我们自己，找到就是死循环）。
     顺序按 Windows 的习惯：.exe → .cmd → .bat → 裸名（给 POSIX）。
+    命中 `.cmd` 时再试一次**包里的原生 exe**（见 `_prefer_native`）。
     """
     forced = os.environ.get("GATE_REAL_BIN", "").strip()
     if forced:
@@ -90,11 +149,15 @@ def _real_bin(base, shim_dir):
         for ext in (".exe", ".cmd", ".bat", ""):
             p = os.path.join(d, base + ext)
             if os.path.isfile(p):
+                if ext in (".cmd", ".bat"):
+                    native = _prefer_native(p, base)
+                    if native:
+                        return native
                 return p
     return ""
 
 
-def _run(real, args):
+def _run(real, args, extra_env=None):
     """把命令交给真身，返回它的退出码。**不捕获 stdout**：那是用户的。"""
     # 递归保险丝：万一真身又解析回包装器（PATH 配错、shim 又被拷了一份），
     # 深度一到就报错退出，别把那棵进程树一直养下去。
@@ -104,6 +167,9 @@ def _run(real, args):
     except ValueError:
         depth = 0
     env = dict(os.environ)
+    for k, v in (extra_env or {}).items():
+        if not (env.get(k) or "").strip():      # 调用方显式设的优先
+            env[k] = v
     env["GATE_WRAP_DEPTH"] = str(depth + 1)
     try:
         return subprocess.call([real] + args, env=env)
@@ -136,9 +202,11 @@ def main(argv=None):
 
     # shim 自己带上来的目录优先；没有就退回环境变量（预检/手工调用时用）。
     shim_dir = arg_shim or os.environ.get("CC_GATE_SHIM_DIR", "").strip()
-    real = _real_bin(base, shim_dir)
+    # `wecom-bot` ⇒ 真身是 `wecom-cli`，另外带一份凭据目录；判定仍按 wecom-cli
+    real_base, extra_env, judge = LAUNCHERS.get(base, (base, {}, base))
+    real = _real_bin(real_base, shim_dir)
     if not real:
-        print("闸门：PATH 上找不到 %s 的本体（排除包装器自己的目录后）。" % base,
+        print("闸门：PATH 上找不到 %s 的本体（排除包装器自己的目录后）。" % real_base,
               file=sys.stderr)
         return 127
 
@@ -149,20 +217,21 @@ def main(argv=None):
     if os.environ.get("CC_APPROVAL_AUTO", "").strip() == "1":
         if adir:
             gate._log_readonly(adir, "[auto-wrap] %s %s" % (base, " ".join(args)))
-        return _run(real, args)
+        return _run(real, args, extra_env)
 
-    # 判定：**与 hook 完全同一套**（`_cli_ok` 认 dws 的 effect 表、lark-cli 的 risk 表）
-    ok, policy = gate._cli_ok(base, args)
+    # 判定：**与 hook 完全同一套**（`_cli_ok` 认 dws 的 effect 表、lark-cli 的 risk 表、
+    # wecom-cli 的读写快照）。`wecom-bot` 用 `wecom-cli` 的名字判定，但卡面写它自己的名字。
+    ok, policy = gate._cli_ok(judge, args)
     if ok:
         if adir:
             gate._log_readonly(adir, "[wrap] %s %s" % (base, " ".join(args)))
-        return _run(real, args)
+        return _run(real, args, extra_env)
 
     # 要授权：先证明"能发卡"，再发。没有审批目录 ⇒ 直接拒绝（不降级成放行）。
     # `exit_on_allow=False`：批下来之后**还要执行这条命令**，不能让 allow() 把进程带走。
     gate.ask_card(base, {"command": " ".join([base] + args)}, policy,
                   exit_on_allow=False)
-    return _run(real, args)
+    return _run(real, args, extra_env)
 
 
 if __name__ == "__main__":

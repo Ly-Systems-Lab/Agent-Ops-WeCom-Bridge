@@ -246,14 +246,19 @@ def default_approval_dir(platform):
     return os.path.join(ROOT, "data", name)
 
 
-# ---------------- 闸门 shim：让 dws / lark-cli 先经过包装器 ----------------
+# ---------------- 闸门 shim：让执行面 CLI 先经过包装器 ----------------
 # 为什么同一个名字要放两个文件：
 #   · bash（Claude Code 的 Bash 工具走这个）只认**裸名**、不看 PATHEXT
 #     ⇒ 必须有一个没有后缀的 `dws`（`#!/bin/sh`）；
 #   · cmd.exe / CreateProcess 只认 PATHEXT 里的后缀 ⇒ 还要一个 `dws.cmd`。
 # 优先级靠**目录顺序**：把本目录垫在 PATH 最前，两边都先命中我们。
 # （所以"往真身同一个目录里塞同名 .cmd"不管用 —— 那里 .exe 排在 .cmd 前面。）
-GATE_SHIM_NAMES = ("dws", "lark-cli")
+GATE_SHIM_NAMES = ("dws", "lark-cli", "wecom-cli", "wecom-bot")
+# **由本仓提供**、不依赖"PATH 上装没装"的那几个：
+# `wecom-bot` 不是另一个二进制，是同一个官方 CLI + 另一份凭据目录
+# （`data/wecom-cli-cc/`）⇒ 以本桥的机器人身份执行。它的 shim 必须总是生成，
+# 否则这个"手"只存在于桥的子进程里，别的入口（终端 / DSH / 脚本）用不了。
+GATE_SHIM_OWNED = ("wecom-bot",)
 
 _GATE_SHIM_SH = """#!/bin/sh
 # 由 tools/install_gate_shims.py / app/common.py 生成，别手改（下次启动会被覆盖）。
