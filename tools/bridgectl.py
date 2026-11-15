@@ -133,7 +133,7 @@ def main():
     else:
         print(done.get("text") or "")
         if done.get("ok"):
-            print("\n（桥会在看守通过后自己退出，新进程接管。约 1~2 分钟可用；"
+            print("\n（桥会在看守通过后自己退出，新进程接管。通常几秒就可用（实测 2~5 秒）；"
                   "期间再投命令会失败。）")
     return 0 if done.get("ok") else 1
 

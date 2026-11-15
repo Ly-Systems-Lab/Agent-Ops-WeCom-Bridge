@@ -274,7 +274,10 @@ def test_switcher_request():
     ok, text = sw.request("feishu", actor="u1")
     check("预检通过 → ok", ok, text[:60])
     check("真源已写入 feishu", st.current() == "feishu")
-    check("回执里说清了要重启", "重启" in text or "1~2 分钟" in text)
+    check("回执里说清了要重启", "重启" in text)
+    # 反向守卫：旧口径「约 1~2 分钟」是 2026-11-13 一次冷启动最坏样本，
+    # 2026-11-15 五次实测都是 2~5 秒 —— 不许它再写回来。
+    check("回执里不再写「1~2 分钟」", "1~2 分钟" not in text)
     ok2, text2 = sw.request("slack")
     check("看守中拒绝第二次切换", not ok2 and "看守中" in text2)
 
