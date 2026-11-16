@@ -78,8 +78,8 @@ PY
 
 ## 五、发布方该给的：文件分类表
 
-本仓每发一版，会在下面「版本记录」里给一张表。**从 v1.0.0 起这是承诺**；
-在此之前，格式照此、但可能不全。
+本仓每发一版，会在下面「版本记录」里给一张表。**自 v1.0.0 起这是承诺**（v1.0.0 那张就是第一张）。
+v1.0.0 之前那几条是补记的 —— 格式一致，但当时并不全。
 
 | 文件 | 改动 | 增/删行 | 能否整份替换 | 原因 |
 |---|---|---|---|---|
@@ -90,9 +90,10 @@ PY
 
 ## 六、回滚
 
-> ⚠️ **目前没有发布级回退点。** v1.0.0 之前本仓不打发布 tag ——
-> 想留退路请**自己开分支 / fork**，别指望 `checkout v1.0.0`。
-> **自 v1.0.0 起**，每个发布点一个 tag，回退就是一条命令。
+> ✅ **自 v1.0.0 起有发布级回退点。** 每个发布点一个 annotated tag，回退就是一条命令：
+> `git checkout v1.0.0`（想在上面改就用 `git switch -c mine v1.0.0`）。
+> **v1.0.0 之前没有 tag** —— 那些版本想留退路只能自己开分支 / fork。
+> （这段在 tag 落地之前写的是"目前没有回退点"。话是同一句，等它真成立了才改口。）
 
 现在就能用的两种退路：
 
@@ -104,6 +105,33 @@ PY
 ---
 
 ## 七、版本记录
+
+### 2026-11-17 · **v1.0.0**（第一个发布 tag）
+
+**范围：控制面这一个仓。** 数据面是另一个仓、另一套版本号，两边的稳定点互不构成对方的前置条件。
+
+相对上一份记在案上的发布点 `86b557a`（2026-11-12）：**11 个提交 / 57 个文件 / +7,866 −138**。
+逐文件清单：`git diff --stat 86b557a v1.0.0`。
+
+| 区 | 文件 | 能否整份替换 | 你要动脑的地方 |
+|---|---|---|---|
+| **闸门** | `tools/approval_hook.py`（+388）、`tools/gate_cli.py`、`gate_wrap.py`、`install_gate_shims.py`、`probe_local_writes.py` | ⚠️ **需看** | 你加过自己的命令白名单 / 免卡名单的话，只能挑你那条之外的 hunk 合 |
+| **快照** | `interop/wecom_effects.json`（860 行）、`tools/wecom_effect_sync.py` | ✅ | 快照是生成物：整份换掉，再跑一次 `--check` |
+| **内核** | `app/core/`（`control` / `platform_store` / `platform_switch` / `runtime_file` / `bridge_core` / `exec_identity` / `contract`）、`app/bridge.py`、`app/common.py` | ⚠️ **需看** | 你在 `bridge_core` 或 `contract` 上有本地改动，先 diff 再合 |
+| **平台层** | `app/platforms/{wecom,feishu,slack}/*.py` | ⚠️ **需看** | 自己有适配器的**别覆盖**；只取你实际用到的那一家 |
+| **入口工具** | `tools/bridgectl.py`（新增） | ✅ | 独立新文件，不冲突 |
+| **文档 / 样例** | `README.md`、`docs/**`、`interop/*.md`、`platforms/*/README.md`、`CLAUDE.md`、`.env.example` | ✅ | 纯文档；你若本地改过文案，覆盖前自己看一眼 |
+| **测试** | `tools/test_*.py`（7 个新增） | ❌ **通常不抄** | 绑定本仓内部 API，抄过去跑不通 |
+| **素材** | `docs/feedback/assets/**`、`docs/field-reports/**` | ✅ | 纯图片 |
+
+**破坏性变更：无。** `.env` 键只增不改，数据目录结构不变。但有一个**语义变化**要知道：
+
+> ⚠️ **平台的真源从 `.env` 的 `PLATFORM` 变成 `data/platform.json`。**
+> 没有那个文件时 `.env` 仍当种子（**老配置照样能起来**）；一旦跑过一次，**改 `.env` 不再生效** ——
+> 换平台用聊天里的 `/platform`（它会替你重启桥）。见 [federation.md](federation.md) §一之二。
+
+新增的可选配置：`CC_SLACK_BACKLOG_GRACE_SEC`（断线积压丢弃窗口，默认 10 秒）、
+`CC_GATE_SHIM`（闸门包装器，默认开）。两项都不配也有正确的默认行为。
 
 ### 2026-11-12 · 图片提示去工具名（发布 `86b557a`）
 
